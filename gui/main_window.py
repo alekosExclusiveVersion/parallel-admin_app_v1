@@ -1,15 +1,16 @@
-# src/gui/main_window.py
-
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget,
-    QHBoxLayout,
     QVBoxLayout,
+    QHBoxLayout,
     QLabel,
     QListWidget,
     QTableWidget,
-    QTableWidgetItem,
-    QPushButton,
     QTextEdit,
+    QPushButton,
+    QFrame,
+    QSizePolicy,
+    QHeaderView,
 )
 
 
@@ -17,18 +18,95 @@ class MainWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        layout = QVBoxLayout(self)
+        self._build_ui()
 
-        # Верхняя панель
-        header = QLabel("Parallel Admin v1.0")
-        header.setStyleSheet("font-size: 18px; font-weight: bold;")
-        layout.addWidget(header)
+    def _build_ui(self):
+        self.setObjectName("MainWindow")
 
-        # Основная зона
-        body = QHBoxLayout()
+        self.setStyleSheet("""
+        QWidget#MainWindow {
+            background: #f3f5f7;
+        }
 
-        # Список серверов
+        QLabel#Title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #2d3436;
+            padding: 6px;
+        }
+
+        QLabel#Subtitle {
+            color: #636e72;
+            padding-left: 6px;
+            padding-bottom: 8px;
+        }
+
+        QFrame {
+            background: white;
+            border: 1px solid #dfe6e9;
+            border-radius: 8px;
+        }
+
+        QListWidget,
+        QTableWidget,
+        QTextEdit {
+            border: none;
+            background: white;
+            font-size: 13px;
+        }
+
+        QPushButton {
+            min-height: 34px;
+            background: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 0 18px;
+        }
+
+        QPushButton:hover {
+            background: #1565c0;
+        }
+
+        QPushButton:pressed {
+            background: #0d47a1;
+        }
+        """)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(14, 14, 14, 14)
+        root.setSpacing(12)
+
+        # -------------------------------------------------
+        # Header
+        # -------------------------------------------------
+
+        title = QLabel("Parallel Admin")
+        title.setObjectName("Title")
+
+        subtitle = QLabel("Mass administration tool")
+        subtitle.setObjectName("Subtitle")
+
+        root.addWidget(title)
+        root.addWidget(subtitle)
+
+        # -------------------------------------------------
+        # Central area
+        # -------------------------------------------------
+
+        central = QHBoxLayout()
+        central.setSpacing(12)
+
+        # Left panel
+
+        left_frame = QFrame()
+        left_layout = QVBoxLayout(left_frame)
+        left_layout.setContentsMargins(10, 10, 10, 10)
+
+        left_layout.addWidget(QLabel("Servers"))
+
         self.server_list = QListWidget()
+
         self.server_list.addItems([
             "p7ru1.tradesoft.ru",
             "p7ru3.tradesoft.ru",
@@ -37,24 +115,72 @@ class MainWindow(QWidget):
             "p7ru8.tradesoft.ru",
         ])
 
-        body.addWidget(self.server_list, 1)
+        left_layout.addWidget(self.server_list)
 
-        # Таблица результатов
+        # Right panel
+
+        right_layout = QVBoxLayout()
+        right_layout.setSpacing(12)
+
+        table_frame = QFrame()
+        table_layout = QVBoxLayout(table_frame)
+        table_layout.setContentsMargins(10, 10, 10, 10)
+
+        table_layout.addWidget(QLabel("Results"))
+
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels([
-            "Server", "Database", "Country", "Value"
+            "Server",
+            "Database",
+            "Country",
+            "Value",
         ])
 
-        body.addWidget(self.table, 3)
+        self.table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch
+        )
 
-        layout.addLayout(body)
+        self.table.verticalHeader().setVisible(False)
 
-        # Лог
+        table_layout.addWidget(self.table)
+
+        log_frame = QFrame()
+        log_layout = QVBoxLayout(log_frame)
+        log_layout.setContentsMargins(10, 10, 10, 10)
+
+        log_layout.addWidget(QLabel("Log"))
+
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-        self.log.append("Ready")
-        layout.addWidget(self.log)
+        self.log.append("Parallel Admin started.")
 
-        # Кнопка (пока без логики)
-        self.btn = QPushButton("Check")
-        layout.addWidget(self.btn)
+        log_layout.addWidget(self.log)
+
+        right_layout.addWidget(table_frame, 4)
+        right_layout.addWidget(log_frame, 2)
+
+        central.addWidget(left_frame, 1)
+        central.addLayout(right_layout, 3)
+
+        root.addLayout(central)
+
+        # -------------------------------------------------
+        # Footer
+        # -------------------------------------------------
+
+        footer = QHBoxLayout()
+
+        footer.addStretch()
+
+        self.btn_check = QPushButton("Check")
+        self.btn_update = QPushButton("Update")
+        self.btn_verify = QPushButton("Verify")
+
+        self.btn_update.setEnabled(False)
+        self.btn_verify.setEnabled(False)
+
+        footer.addWidget(self.btn_check)
+        footer.addWidget(self.btn_update)
+        footer.addWidget(self.btn_verify)
+
+        root.addLayout(footer)
