@@ -1,0 +1,14 @@
+2026-07-01 16:06:00,229 | INFO | MainThread | Серверов: 5
+2026-07-01 16:06:00,233 | INFO | ThreadPoolExecutor-0_0 | p7ru1.tradesoft.ru: подключение
+2026-07-01 16:06:00,233 | INFO | ThreadPoolExecutor-0_1 | p7ru3.tradesoft.ru: подключение
+2026-07-01 16:06:00,233 | INFO | ThreadPoolExecutor-0_3 | p7ru5.tradesoft.ru: подключение
+2026-07-01 16:06:00,233 | INFO | ThreadPoolExecutor-0_2 | p7ru4.tradesoft.ru: подключение
+2026-07-01 16:06:00,233 | INFO | ThreadPoolExecutor-0_4 | p7ru8.tradesoft.ru: подключение
+2026-07-01 16:06:12,295 | INFO | ThreadPoolExecutor-0_3 | p7ru5.tradesoft.ru: найдено 27 проектов
+2026-07-01 16:06:16,828 | INFO | ThreadPoolExecutor-0_2 | p7ru4.tradesoft.ru: найдено 48 проектов
+2026-07-01 16:06:30,379 | INFO | ThreadPoolExecutor-0_0 | p7ru1.tradesoft.ru: найдено 75 проектов
+2026-07-01 16:07:13,775 | INFO | ThreadPoolExecutor-0_4 | p7ru8.tradesoft.ru: найдено 165 проектов
+2026-07-01 16:07:49,739 | INFO | ThreadPoolExecutor-0_1 | p7ru3.tradesoft.ru: найдено 271 проектов
+2026-07-01 16:07:49,745 | INFO | MainThread | Обработка завершена. Успешно: 5, ошибок: 0
+2026-07-01 16:07:49,764 | INFO | MainThread | CSV сохранён: logs/result.csv
+2026-07-01 16:07:49,764 | INFO | MainThread | Всего найдено проектов: 586

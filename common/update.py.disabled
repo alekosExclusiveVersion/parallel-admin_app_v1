@@ -1,0 +1,88 @@
+"""
+update.py
+
+Массовое обновление значения настройки.
+"""
+
+from __future__ import annotations
+
+import csv
+from pathlib import Path
+
+from common.config import config
+from common.logger import logger
+from common.repository import repository
+from common.stats import stats
+from common.worker import worker_pool
+
+
+def load_servers() -> list[str]:
+    path = Path(__file__).parent / "servers.txt"
+    with path.open(encoding="utf-8") as f:
+        return [
+            line.strip()
+            for line in f
+            if line.strip() and not line.startswith("#")
+        ]
+
+
+def process_server(server: str):
+    return repository.update(server)
+
+
+def save_csv(rows):
+    out_dir = config.logging.directory
+    out_dir.mkdir(parents=True, exist_ok=True)
+    outfile = out_dir / "update_result.csv"
+
+    with outfile.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow([
+            "SERVER", "DATABASE", "OLD_VALUE",
+            "NEW_VALUE", "AFFECTED_ROWS", "STATUS"
+        ])
+        for r in rows:
+            w.writerow([
+                r.server,
+                r.database,
+                r.old_value,
+                r.new_value,
+                r.affected_rows,
+                r.status.value,
+            ])
+
+    logger.success(f"CSV сохранён: {outfile}")
+
+
+def main():
+    stats.reset()
+
+    servers = load_servers()
+    results = worker_pool.run(servers, process_server)
+
+    rows = []
+
+    print()
+    print(f'{"SERVER":22} {"DATABASE":35} STATUS')
+    print("-" * 80)
+
+    for server_rows in results:
+        if not server_rows:
+            continue
+
+        for row in server_rows:
+            rows.append(row)
+            print(
+                f"{row.server:22} "
+                f"{row.database:35} "
+                f"{row.status.value}"
+            )
+
+    save_csv(rows)
+
+    logger.success(f"Обновлено проектов: {len(rows)}")
+    logger.info(str(stats.summary()))
+
+
+if __name__ == "__main__":
+    main()
