@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QLabel,
 )
 
+from common.mysql_client import mysql
 from common.mysql_session import session
 
 
@@ -37,19 +38,11 @@ class LoginDialog(QDialog):
 
         form = QFormLayout()
 
-
-        self.host = QLineEdit()
         self.user = QLineEdit()
 
         self.password = QLineEdit()
         self.password.setEchoMode(
             QLineEdit.Password
-        )
-
-
-        form.addRow(
-            "Server:",
-            self.host
         )
 
         form.addRow(
@@ -82,17 +75,13 @@ class LoginDialog(QDialog):
 
     def _accept(self):
 
-        session.host = (
-            self.host.text()
-        )
+        if not self.user.text().strip():
+            return
 
-        session.user = (
-            self.user.text()
-        )
+        if not self.password.text():
+            return
 
-        session.password = (
-            self.password.text()
-        )
-
+        session.user = self.user.text()
+        session.password = self.password.text()
 
         self.accept()
