@@ -1,3 +1,4 @@
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QWidget,
@@ -12,6 +13,9 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QToolBar,
     QProgressBar,
+    QLineEdit,
+    QPushButton,
+    QAbstractItemView,
 )
 
 
@@ -47,10 +51,13 @@ class MainWindow(QWidget):
 
         QListWidget,
         QTextEdit,
-        QTableWidget{
+        QTableWidget,
+        QLineEdit{
             background:white;
-            border:none;
+            border:1px solid #dfe6e9;
+            border-radius:4px;
             font-size:13px;
+            padding:4px;
         }
 
         QToolBar{
@@ -58,6 +65,17 @@ class MainWindow(QWidget):
             border:1px solid #dfe6e9;
             padding:6px;
             spacing:6px;
+        }
+
+        QPushButton{
+            min-height:28px;
+            border:1px solid #d0d7de;
+            border-radius:4px;
+            background:white;
+        }
+
+        QPushButton:hover{
+            background:#f5f5f5;
         }
 
         QProgressBar{
@@ -77,10 +95,6 @@ class MainWindow(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(14, 14, 14, 14)
         root.setSpacing(10)
-
-        # ----------------------------------------------------------
-        # Toolbar
-        # ----------------------------------------------------------
 
         self.toolbar = QToolBar()
 
@@ -104,16 +118,9 @@ class MainWindow(QWidget):
 
         root.addWidget(self.toolbar)
 
-        # ----------------------------------------------------------
-        # Progress Panel
-        # ----------------------------------------------------------
-
         progress_frame = QFrame()
 
         progress_layout = QGridLayout(progress_frame)
-        progress_layout.setContentsMargins(12, 10, 12, 10)
-        progress_layout.setHorizontalSpacing(24)
-        progress_layout.setVerticalSpacing(6)
 
         self.lbl_status = QLabel("Status:")
         self.lbl_status_value = QLabel("Ready")
@@ -136,15 +143,10 @@ class MainWindow(QWidget):
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
-        self.progress.setTextVisible(True)
 
         progress_layout.addWidget(self.progress, 1, 0, 1, 6)
 
         root.addWidget(progress_frame)
-
-        # ----------------------------------------------------------
-        # Header
-        # ----------------------------------------------------------
 
         title = QLabel("Parallel Admin")
         title.setObjectName("Title")
@@ -155,21 +157,37 @@ class MainWindow(QWidget):
         root.addWidget(title)
         root.addWidget(subtitle)
 
-        # ----------------------------------------------------------
-        # Main Area
-        # ----------------------------------------------------------
-
         body = QHBoxLayout()
         body.setSpacing(12)
 
         server_frame = QFrame()
-
         server_layout = QVBoxLayout(server_frame)
-        server_layout.setContentsMargins(10, 10, 10, 10)
 
         server_layout.addWidget(QLabel("Servers"))
 
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search server...")
+        server_layout.addWidget(self.search)
+
+        self.selected_label = QLabel("Selected: 0")
+        server_layout.addWidget(self.selected_label)
+
+        buttons = QHBoxLayout()
+
+        self.btn_select_all = QPushButton("Select All")
+        self.btn_clear = QPushButton("Clear")
+        self.btn_invert = QPushButton("Invert")
+
+        buttons.addWidget(self.btn_select_all)
+        buttons.addWidget(self.btn_clear)
+        buttons.addWidget(self.btn_invert)
+
+        server_layout.addLayout(buttons)
+
         self.server_list = QListWidget()
+        self.server_list.setSelectionMode(
+            QAbstractItemView.ExtendedSelection
+        )
 
         self.server_list.addItems([
             "p7ru1.tradesoft.ru",
@@ -184,19 +202,13 @@ class MainWindow(QWidget):
         body.addWidget(server_frame, 1)
 
         right = QVBoxLayout()
-        
-        # ----------------------------------------------------------
-        # Results
-        # ----------------------------------------------------------
-
         table_frame = QFrame()
 
         table_layout = QVBoxLayout(table_frame)
         table_layout.setContentsMargins(10, 10, 10, 10)
         table_layout.setSpacing(8)
 
-        lbl_results = QLabel("Results")
-        table_layout.addWidget(lbl_results)
+        table_layout.addWidget(QLabel("Results"))
 
         self.table = QTableWidget(0, 4)
 
@@ -212,21 +224,16 @@ class MainWindow(QWidget):
         )
 
         self.table.verticalHeader().setVisible(False)
-
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(
             QTableWidget.SelectRows
         )
-
         self.table.setSelectionMode(
             QTableWidget.SingleSelection
         )
-
         self.table.setEditTriggers(
             QTableWidget.NoEditTriggers
         )
-
-        self.table.setSortingEnabled(False)
 
         table_layout.addWidget(self.table)
 
@@ -242,8 +249,7 @@ class MainWindow(QWidget):
         log_layout.setContentsMargins(10, 10, 10, 10)
         log_layout.setSpacing(8)
 
-        lbl_log = QLabel("Log")
-        log_layout.addWidget(lbl_log)
+        log_layout.addWidget(QLabel("Log"))
 
         self.log = QTextEdit()
         self.log.setReadOnly(True)
@@ -258,3 +264,53 @@ class MainWindow(QWidget):
         body.addLayout(right, 3)
 
         root.addLayout(body)
+
+        # ----------------------------------------------------------
+        # Signals
+        # ----------------------------------------------------------
+
+        self.server_list.itemSelectionChanged.connect(
+            self._update_selected_count
+        )
+
+        self.btn_select_all.clicked.connect(
+            self.server_list.selectAll
+        )
+
+        self.btn_clear.clicked.connect(
+            self.server_list.clearSelection
+        )
+
+        self.btn_invert.clicked.connect(
+            self._invert_selection
+        )
+
+        self.search.textChanged.connect(
+            self._filter_servers
+        )
+
+    # --------------------------------------------------------------
+    # Slots
+    # --------------------------------------------------------------
+
+    def _update_selected_count(self):
+        self.selected_label.setText(
+            f"Selected: {len(self.server_list.selectedItems())}"
+        )
+
+    def _invert_selection(self):
+        for row in range(self.server_list.count()):
+            item = self.server_list.item(row)
+            item.setSelected(not item.isSelected())
+
+        self._update_selected_count()
+
+    def _filter_servers(self, text):
+        text = text.lower().strip()
+
+        for row in range(self.server_list.count()):
+            item = self.server_list.item(row)
+
+            item.setHidden(
+                text not in item.text().lower()
+            )
