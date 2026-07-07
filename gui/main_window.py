@@ -41,7 +41,7 @@ class MainWindow(QWidget):
         
         self._build_ui()
         self._create_backend()
-        
+
         self._load_servers()
         
     # ----------------------------------------------------------
@@ -90,6 +90,9 @@ class MainWindow(QWidget):
         self.action_check.triggered.connect(
             self._run_check
         )
+        self.action_refresh.triggered.connect(
+            self._refresh_servers
+        )
 
     # ----------------------------------------------------------
     # Repository
@@ -101,15 +104,40 @@ class MainWindow(QWidget):
 
         self.server_list.clear()
 
-        self.server_list.addItems(servers)
+        if servers:
+            self.server_list.addItems(servers)
+
+        count = len(servers)
 
         self.lbl_servers_value.setText(
-            f"{len(servers)} / {len(servers)}"
+            f"{count} / {count}"
+        )
+
+        self.selected_label.setText(
+            "Selected: 0"
         )
 
         self.append_log(
             "INFO",
-            f"Loaded {len(servers)} servers."
+            f"Loaded {count} server(s)."
+        )
+
+
+    # ----------------------------------------------------------
+    # Refresh
+    # ----------------------------------------------------------
+
+    def _refresh_servers(self):
+
+        previous = self.server_list.count()
+
+        self._load_servers()
+
+        current = self.server_list.count()
+
+        self.append_log(
+            "SUCCESS",
+            f"Server list refreshed ({previous} → {current})"
         )
 
     # ----------------------------------------------------------
