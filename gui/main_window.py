@@ -1,3 +1,4 @@
+from backend.repository import Repository
 from backend.check_worker import CheckWorker
 from PySide6.QtCore import (
     Qt,
@@ -35,8 +36,13 @@ from PySide6.QtWidgets import (
 class MainWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        
+        self.repository = Repository()
+        
         self._build_ui()
         self._create_backend()
+        
+        self._load_servers()
         
     # ----------------------------------------------------------
     # Backend
@@ -83,6 +89,27 @@ class MainWindow(QWidget):
 
         self.action_check.triggered.connect(
             self._run_check
+        )
+
+    # ----------------------------------------------------------
+    # Repository
+    # ----------------------------------------------------------
+
+    def _load_servers(self):
+
+        servers = self.repository.load_servers()
+
+        self.server_list.clear()
+
+        self.server_list.addItems(servers)
+
+        self.lbl_servers_value.setText(
+            f"{len(servers)} / {len(servers)}"
+        )
+
+        self.append_log(
+            "INFO",
+            f"Loaded {len(servers)} servers."
         )
 
     # ----------------------------------------------------------
@@ -295,14 +322,6 @@ class MainWindow(QWidget):
         self.server_list.setSelectionMode(
             QAbstractItemView.ExtendedSelection
         )
-
-        self.server_list.addItems([
-            "p7ru1.tradesoft.ru",
-            "p7ru3.tradesoft.ru",
-            "p7ru4.tradesoft.ru",
-            "p7ru5.tradesoft.ru",
-            "p7ru8.tradesoft.ru",
-        ])
 
         server_layout.addWidget(self.server_list)
 
