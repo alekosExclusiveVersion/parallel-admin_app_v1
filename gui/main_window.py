@@ -3,6 +3,7 @@ from PySide6.QtGui import (
     QAction,
     QColor,
     QBrush,
+    QTextCursor,
 )
 
 from PySide6.QtWidgets import (
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QTextEdit,
     QFrame,
+    QFileDialog,
     QHeaderView,
     QToolBar,
     QProgressBar,
@@ -286,7 +288,7 @@ class MainWindow(QWidget):
         right.addWidget(table_frame, 3)
 
         # ----------------------------------------------------------
-        # Log
+        # Log Panel UI
         # ----------------------------------------------------------
 
         log_frame = QFrame()
@@ -295,21 +297,32 @@ class MainWindow(QWidget):
         log_layout.setContentsMargins(10, 10, 10, 10)
         log_layout.setSpacing(8)
 
-        log_layout.addWidget(QLabel("Log"))
+        top = QHBoxLayout()
+
+        top.addWidget(QLabel("Log"))
+
+        top.addStretch()
+
+        self.btn_log_clear = QPushButton("Clear")
+        self.btn_log_copy = QPushButton("Copy")
+        self.btn_log_save = QPushButton("Save")
+
+        top.addWidget(self.btn_log_clear)
+        top.addWidget(self.btn_log_copy)
+        top.addWidget(self.btn_log_save)
+
+        log_layout.addLayout(top)
 
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-
-        self.log.append("Parallel Admin started.")
-        self.log.append("Ready.")
 
         log_layout.addWidget(self.log)
 
         right.addWidget(log_frame, 1)
 
-        body.addLayout(right, 3)
-
-        root.addLayout(body)
+        self.append_log("INFO", "Parallel Admin started.")
+        self.append_log("SUCCESS", "GUI initialized.")
+        self.append_log("INFO", "Ready.")
 
         # ----------------------------------------------------------
         # Signals
@@ -335,6 +348,20 @@ class MainWindow(QWidget):
             self._filter_servers
         )
 
+        self.btn_log_clear.clicked.connect(
+            self.log.clear
+        )
+
+        self.btn_log_copy.clicked.connect(
+            self.log.copy
+        )
+
+        self.btn_log_save.clicked.connect(
+            self._save_log
+        )
+        body.addLayout(right, 3)
+
+        root.addLayout(body)
     # --------------------------------------------------------------
     # Slots
     # --------------------------------------------------------------
@@ -441,6 +468,48 @@ class MainWindow(QWidget):
         server = self.table.item(row, 0)
 
         if server:
-            self.log.append(
+            self.append_log(
+                "INFO",
                 f"Selected server: {server.text()}"
             )
+
+    # ----------------------------------------------------------
+    # Log Methods
+    # ----------------------------------------------------------
+
+    def append_log(self, level: str, message: str):
+
+        colors = {
+            "INFO": "#1565c0",
+            "SUCCESS": "#2e7d32",
+            "WARNING": "#ef6c00",
+            "ERROR": "#c62828",
+        }
+
+        color = colors.get(level.upper(), "#212121")
+
+        self.log.append(
+            f'<span style="color:{color};"><b>[{level.upper()}]</b></span> {message}'
+        )
+
+        self.log.moveCursor(QTextCursor.End)
+
+    def _save_log(self):
+
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save log",
+            "parallel_admin.log",
+            "Log files (*.log);;Text files (*.txt);;All files (*)",
+        )
+
+        if not filename:
+            return
+
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(self.log.toPlainText())
+
+        self.append_log(
+            "SUCCESS",
+            f"Log saved to {filename}",
+        )
