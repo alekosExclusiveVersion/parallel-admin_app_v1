@@ -15,6 +15,7 @@ from pymysql.cursors import DictCursor
 
 from common.config import config
 from common.logger import logger
+from common.mysql_session import session
 
 
 class MySQLClient:
@@ -30,8 +31,8 @@ class MySQLClient:
             try:
                 conn = pymysql.connect(
                     host=host,
-                    user=self.cfg.user,
-                    password=self.cfg.password,
+                    user=session.user,
+                    password=session.password,
                     database=database,
                     connect_timeout=self.cfg.connect_timeout,
                     read_timeout=self.cfg.read_timeout,
@@ -118,7 +119,6 @@ SET stg_value=%s
 WHERE stg_name=%s
 """
         return self.execute(host, sql, database, (value, name))
-
 
 mysql = MySQLClient()
 

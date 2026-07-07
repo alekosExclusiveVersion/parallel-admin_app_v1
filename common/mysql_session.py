@@ -10,7 +10,6 @@ from dataclasses import dataclass
 @dataclass
 class MySQLSession:
 
-    host: str = ""
     user: str = ""
     password: str = ""
 
