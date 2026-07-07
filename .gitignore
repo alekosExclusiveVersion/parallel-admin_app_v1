@@ -1,43 +1,30 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
+*$py.class
 
-# Virtual environment
+# Virtual environments
 .venv/
 venv/
-
-# VS Code
-.vscode/
-
-# macOS
-.DS_Store
-
-# Qt
-*.qm
-
-# Logs
-*.log
+env/
 
 # Build
 build/
 dist/
+*.egg-info/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Type checkers
+.mypy_cache/
+.ruff_cache/
 
 # IDE
+.vscode/
 .idea/
 
-# Environment
-.env
-common/__pycache__/config.cpython-314.pyc
-common/__pycache__/mysql_client.cpython-314.pyc
-docs/architecture.md
-docs/release_notes.md
-docs/screenshots/after PATCH 2.4 p2.png
-docs/screenshots/After PATCH 2.4.png
-docs/screenshots/after PATCH 3.1.png
-gui/__pycache__/__init__.cpython-314.pyc
-gui/__pycache__/application.cpython-314.pyc
-gui/__pycache__/main_window.cpython-314.pyc
-logs/errors.log
-logs/run.log
+# macOS
+.DS_Store
