@@ -1,3 +1,5 @@
+from backend.check_service import CheckService
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import (
     QAction,
@@ -32,6 +34,7 @@ class MainWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._build_ui()
+        self._create_backend()
 
     def _build_ui(self):
         self.setObjectName("MainWindow")
