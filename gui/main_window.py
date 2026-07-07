@@ -1,5 +1,10 @@
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QBrush,
+)
+
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -8,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QTableWidget,
+    QTableWidgetItem,
     QTextEdit,
     QFrame,
     QHeaderView,
@@ -16,6 +22,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QAbstractItemView,
+    QMenu,
 )
 
 
@@ -260,6 +267,20 @@ class MainWindow(QWidget):
 
         self.table.setFocusPolicy(Qt.StrongFocus)
 
+        # ----------------------------------------------------------
+        # ResultTable signals
+        # ----------------------------------------------------------
+
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+
+        self.table.customContextMenuRequested.connect(
+            self._show_table_menu
+        )
+
+        self.table.itemDoubleClicked.connect(
+            self._table_double_click
+        )
+
         table_layout.addWidget(self.table)
 
         right.addWidget(table_frame, 3)
@@ -338,4 +359,88 @@ class MainWindow(QWidget):
 
             item.setHidden(
                 text not in item.text().lower()
+            )
+    # ----------------------------------------------------------
+    # ResultTable
+    # ----------------------------------------------------------
+
+    def add_result(
+        self,
+        server,
+        database,
+        country,
+        value,
+        status="OK",
+        duration="-",
+    ):
+
+        row = self.table.rowCount()
+
+        self.table.insertRow(row)
+
+        values = [
+            server,
+            database,
+            country,
+            value,
+            status,
+            duration,
+        ]
+
+        for column, text in enumerate(values):
+
+            item = QTableWidgetItem(str(text))
+
+            item.setFlags(
+                item.flags() & ~Qt.ItemIsEditable
+            )
+
+            if column == 4:
+
+                if status == "OK":
+                    item.setForeground(
+                        QBrush(QColor("#2e7d32"))
+                    )
+
+                elif status == "WARNING":
+                    item.setForeground(
+                        QBrush(QColor("#ef6c00"))
+                    )
+
+                elif status == "ERROR":
+                    item.setForeground(
+                        QBrush(QColor("#c62828"))
+                    )
+
+            self.table.setItem(
+                row,
+                column,
+                item,
+            )
+
+    def clear_results(self):
+        self.table.setRowCount(0)
+
+    def _show_table_menu(self, pos):
+
+        menu = QMenu(self)
+
+        clear_action = menu.addAction("Clear results")
+
+        action = menu.exec(
+            self.table.viewport().mapToGlobal(pos)
+        )
+
+        if action == clear_action:
+            self.clear_results()
+
+    def _table_double_click(self, item):
+
+        row = item.row()
+
+        server = self.table.item(row, 0)
+
+        if server:
+            self.log.append(
+                f"Selected server: {server.text()}"
             )
