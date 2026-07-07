@@ -1,3 +1,4 @@
+import time
 from PySide6.QtCore import QObject, Signal, Slot
 
 
@@ -37,8 +38,10 @@ class CheckWorker(QObject):
         for index, server in enumerate(self._servers, start=1):
 
             self.status.emit(
-                f"Checking {server}..."
+                f"Connecting to {server}..."
             )
+
+            time.sleep(0.4)
 
             self.result.emit(
                 server,
@@ -46,7 +49,7 @@ class CheckWorker(QObject):
                 "Russia",
                 "enabled",
                 "OK",
-                "0.12 s",
+                f"{0.4:.2f} s",
             )
 
             self.progress.emit(
