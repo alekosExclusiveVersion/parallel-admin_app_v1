@@ -1,6 +1,8 @@
-from backend.check_service import CheckService
-
-from PySide6.QtCore import Qt
+from backend.check_worker import CheckWorker
+from PySide6.QtCore import (
+    Qt,
+    QThread,
+)
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -35,6 +37,99 @@ class MainWindow(QWidget):
         super().__init__(parent)
         self._build_ui()
         self._create_backend()
+        
+    # ----------------------------------------------------------
+    # Backend
+    # ----------------------------------------------------------
+
+    def _create_backend(self):
+
+        self.thread = QThread(self)
+
+        self.worker = CheckWorker()
+
+        self.worker.moveToThread(self.thread)
+
+        self.worker.started.connect(
+            self._check_started
+        )
+
+        self.worker.finished.connect(
+            self._check_finished
+        )
+
+        self.worker.progress.connect(
+            self.progress.setValue
+        )
+
+        self.worker.status.connect(
+            lambda text: self.append_log(
+                "INFO",
+                text,
+            )
+        )
+
+        self.worker.result.connect(
+            self.add_result
+        )
+
+        self.thread.started.connect(
+            self.worker.run
+        )
+
+        self.worker.finished.connect(
+            self.thread.quit
+        )
+
+        self.action_check.triggered.connect(
+            self._run_check
+        )
+
+    # ----------------------------------------------------------
+    # Check
+    # ----------------------------------------------------------
+
+    def _run_check(self):
+
+        self.clear_results()
+
+        self.progress.setValue(0)
+
+        servers = [
+            item.text()
+            for item in self.server_list.selectedItems()
+        ]
+
+        self.worker.set_servers(servers)
+
+        self.thread.start()
+
+
+    def _check_started(self):
+
+        self.action_check.setEnabled(False)
+        self.action_stop.setEnabled(True)
+
+        self.lbl_status_value.setText("Running")
+
+        self.append_log(
+            "INFO",
+            "Check started.",
+        )
+
+
+    def _check_finished(self):
+
+        self.action_check.setEnabled(True)
+        self.action_stop.setEnabled(False)
+
+        self.lbl_status_value.setText("Ready")
+
+        self.append_log(
+            "SUCCESS",
+            "Check completed.",
+        )
+        
 
     def _build_ui(self):
         self.setObjectName("MainWindow")
@@ -516,3 +611,11 @@ class MainWindow(QWidget):
             "SUCCESS",
             f"Log saved to {filename}",
         )
+
+    def closeEvent(self, event):
+
+        if self.thread.isRunning():
+            self.thread.quit()
+            self.thread.wait()
+
+        event.accept()
