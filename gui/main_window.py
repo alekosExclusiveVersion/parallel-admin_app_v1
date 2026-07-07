@@ -210,30 +210,55 @@ class MainWindow(QWidget):
 
         table_layout.addWidget(QLabel("Results"))
 
-        self.table = QTableWidget(0, 4)
+        self.table = QTableWidget()
+
+        self.table.setColumnCount(6)
 
         self.table.setHorizontalHeaderLabels([
             "Server",
             "Database",
             "Country",
             "Value",
+            "Status",
+            "Duration",
         ])
 
-        self.table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.Stretch
-        )
-
         self.table.verticalHeader().setVisible(False)
+
+        header = self.table.horizontalHeader()
+
+        header.setStretchLastSection(False)
+
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+
         self.table.setAlternatingRowColors(True)
+
+        self.table.setSortingEnabled(True)
+
         self.table.setSelectionBehavior(
             QTableWidget.SelectRows
         )
+
         self.table.setSelectionMode(
             QTableWidget.SingleSelection
         )
+
         self.table.setEditTriggers(
             QTableWidget.NoEditTriggers
         )
+
+        self.table.setShowGrid(False)
+
+        self.table.setWordWrap(False)
+
+        self.table.setCornerButtonEnabled(False)
+
+        self.table.setFocusPolicy(Qt.StrongFocus)
 
         table_layout.addWidget(self.table)
 
