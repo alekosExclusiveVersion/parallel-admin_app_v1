@@ -49,3 +49,77 @@ class CheckService(QObject):
         self.status.emit("Completed.")
 
         self.finished.emit()
+    
+    def _create_backend(self):
+
+        self.check_service = CheckService(self)
+
+        self.check_service.started.connect(
+            self._check_started
+        )
+
+        self.check_service.finished.connect(
+            self._check_finished
+        )
+
+        self.check_service.progress.connect(
+            self.progress.setValue
+        )
+
+        self.check_service.status.connect(
+            lambda text: self.append_log(
+                "INFO",
+                text,
+            )
+        )
+
+        self.check_service.result.connect(
+            self.add_result
+        )
+
+        self.action_check.triggered.connect(
+            self._run_check
+        )
+
+# ----------------------------------------------------------
+# Check
+# ----------------------------------------------------------
+
+def _run_check(self):
+
+    self.clear_results()
+
+    self.progress.setValue(0)
+
+    servers = [
+        item.text()
+        for item in self.server_list.selectedItems()
+    ]
+
+    self.check_service.run(servers)
+
+
+def _check_started(self):
+
+    self.action_check.setEnabled(False)
+    self.action_stop.setEnabled(True)
+
+    self.lbl_status_value.setText("Running")
+
+    self.append_log(
+        "INFO",
+        "Check started.",
+    )
+
+
+def _check_finished(self):
+
+    self.action_check.setEnabled(True)
+    self.action_stop.setEnabled(False)
+
+    self.lbl_status_value.setText("Ready")
+
+    self.append_log(
+        "SUCCESS",
+        "Check completed.",
+    )
