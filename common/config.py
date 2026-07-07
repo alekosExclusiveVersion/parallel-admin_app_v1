@@ -59,6 +59,7 @@ class AdvancedConfig:
     batch_size: int
     export_csv: bool
     export_errors: bool
+    servers_file: str
 
 
 @dataclass(frozen=True)
@@ -89,7 +90,10 @@ def load_config(config_file: str | Path | None = None) -> Config:
 
     ignore = tuple(
         x.strip()
-        for x in p.get("advanced", "ignore_databases").split(",")
+        for x in p.get(
+            "advanced",
+            "ignore_databases"
+        ).replace("\n", "").split(",")
         if x.strip()
     )
 
@@ -132,6 +136,7 @@ def load_config(config_file: str | Path | None = None) -> Config:
             batch_size=p.getint("advanced", "batch_size"),
             export_csv=_bool(p, "advanced", "export_csv"),
             export_errors=_bool(p, "advanced", "export_errors"),
+            servers_file=p.get("advanced", "servers_file", fallback="servers.txt",),
         ),
     )
 
