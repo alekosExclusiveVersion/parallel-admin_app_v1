@@ -1,19 +1,24 @@
 from pathlib import Path
 
+from common.config import config
+
 
 class Repository:
 
     def __init__(self):
+
         self._servers = []
 
-    def load_servers(self, filename="servers.txt"):
+        self.server_file = Path(
+            config.advanced.servers_file
+        )
 
-        path = Path(filename)
+    def load_servers(self):
 
-        if not path.exists():
+        if not self.server_file.exists():
             return []
 
-        with path.open(
+        with self.server_file.open(
             "r",
             encoding="utf-8",
         ) as file:
@@ -26,6 +31,8 @@ class Repository:
 
         return self._servers
 
+
     @property
     def servers(self):
+
         return self._servers

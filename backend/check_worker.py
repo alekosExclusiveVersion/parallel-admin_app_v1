@@ -1,5 +1,6 @@
 import time
 from PySide6.QtCore import QObject, Signal, Slot
+from common.config import config
 
 
 class CheckWorker(QObject):
@@ -41,7 +42,9 @@ class CheckWorker(QObject):
                 f"Connecting to {server}..."
             )
 
-            time.sleep(0.4)
+            time.sleep(
+                config.mysql.connect_timeout
+            )
 
             self.result.emit(
                 server,
