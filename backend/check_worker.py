@@ -1,4 +1,5 @@
 import time
+from common.mysql_client import mysql
 from PySide6.QtCore import QObject, Signal, Slot
 from common.config import config
 
@@ -25,40 +26,60 @@ class CheckWorker(QObject):
         self._servers = list(servers)
 
     @Slot()
+    
     def run(self):
 
-        self.started.emit()
+        total = len(self.servers)
 
-        total = len(self._servers)
+        for index, server in enumerate(self.servers, start=1):
 
-        if total == 0:
-            self.status.emit("No servers selected.")
-            self.finished.emit()
-            return
+            self.progress.emit(index, total)
 
-        for index, server in enumerate(self._servers, start=1):
+            try:
 
-            self.status.emit(
-                f"Connecting to {server}..."
-            )
+                databases = mysql.list_databases(server)
 
-            time.sleep(
-                config.mysql.connect_timeout
-            )
+                for database in databases:
 
-            self.result.emit(
-                server,
-                "cfg_settings",
-                "Russia",
-                "enabled",
-                "OK",
-                f"{0.4:.2f} s",
-            )
+                    if not mysql.has_cfg_settings(
+                        server,
+                        database,
+                    ):
+                        continue
 
-            self.progress.emit(
-                int(index * 100 / total)
-            )
+                    settings = mysql.get_settings(
+                        server,
+                        database,
+                    )
 
-        self.status.emit("Completed.")
+                    country = settings.get(
+                        "csSystemCountry",
+                        "-"
+                    )
+
+                    value = settings.get(
+                        "banEmailDomain",
+                        "-"
+                    )
+
+                    self.result.emit(
+                        server,
+                        database,
+                        country,
+                        value,
+                        "OK",
+                        "",
+                    )
+
+            except Exception as ex:
+
+                self.result.emit(
+                    server,
+                    "-",
+                    "-",
+                    "-",
+                    "ERROR",
+                    str(ex),
+                )
 
         self.finished.emit()
