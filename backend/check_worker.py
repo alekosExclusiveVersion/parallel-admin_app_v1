@@ -7,7 +7,7 @@ from common.config import config
 class CheckWorker(QObject):
     started = Signal()
     finished = Signal()
-    progress = Signal(int)
+    progress = Signal(int, int)
     status = Signal(str)
     result = Signal(
         str,
@@ -25,13 +25,22 @@ class CheckWorker(QObject):
     def set_servers(self, servers):
         self._servers = list(servers)
 
+    @property
+    def servers(self):
+
+        return self._servers
+
     @Slot()
     
     def run(self):
 
-        total = len(self.servers)
+        if not self._servers:
+            self.finished.emit()
+            return
 
-        for index, server in enumerate(self.servers, start=1):
+        total = len(self._servers)
+
+        for index, server in enumerate(self._servers, start=1):
 
             self.progress.emit(index, total)
 
