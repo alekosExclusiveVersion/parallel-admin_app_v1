@@ -46,39 +46,50 @@ class CheckWorker(QObject):
 
             try:
 
-                databases = mysql.list_databases(server)
+                with mysql.connect(server) as conn:
 
-                for database in databases:
+                    databases = mysql.list_databases_conn(conn)
 
-                    if not mysql.has_cfg_settings(
-                        server,
-                        database,
-                    ):
-                        continue
+                    for database in databases:
 
-                    settings = mysql.get_settings(
-                        server,
-                        database,
-                    )
+                        try:
 
-                    country = settings.get(
-                        "csSystemCountry",
-                        "-"
-                    )
+                            settings = mysql.get_settings_conn(
+                                conn,
+                                database,
+                            )
 
-                    value = settings.get(
-                        "banEmailDomain",
-                        "-"
-                    )
+                            country = settings.get(
+                                "csSystemCountry",
+                                "-"
+                            )
 
-                    self.result.emit(
-                        server,
-                        database,
-                        country,
-                        value,
-                        "OK",
-                        "",
-                    )
+                            value = settings.get(
+                                "banEmailDomain",
+                                "-"
+                            )
+
+                            self.result.emit(
+                                server,
+                                database,
+                                country,
+                                value,
+                                "OK",
+                                "",
+                            )
+
+                        except Exception as ex:
+
+                            self.result.emit(
+                                server,
+                                database,
+                                "-",
+                                "-",
+                                "ERROR",
+                                str(ex),
+                            )
+
+                            continue
 
             except Exception as ex:
 

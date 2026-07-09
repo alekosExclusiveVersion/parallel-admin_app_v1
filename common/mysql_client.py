@@ -6,6 +6,8 @@ common/mysql_client.py
 
 from __future__ import annotations
 
+
+import re
 import time
 from contextlib import contextmanager
 from typing import Any
@@ -58,6 +60,78 @@ class MySQLClient:
         raise RuntimeError(
             f"Не удалось подключиться к {host}: {last_error}"
         )
+
+    def execute_on_connection(
+        self,
+        conn,
+        sql: str,
+        params=None,
+    ):
+
+        with conn.cursor() as cur:
+
+            cur.execute(
+                sql,
+                params,
+            )
+
+            return cur.fetchall()
+        
+    def list_databases_conn(
+        self,
+        conn,
+    ):
+
+        rows = self.execute_on_connection(
+            conn,
+            "SHOW DATABASES",
+        )
+
+        ignore = set(
+            config.advanced.ignore_databases
+        )
+
+        prefix = config.filter.database_prefix
+        pattern = config.filter.exclude_database_regex
+
+        return [
+            db
+            for row in rows
+            for db in row.values()
+            if (
+                db not in ignore
+                and db.startswith(prefix)
+                and not re.search(pattern, db)
+            )
+        ]
+
+    def get_settings_conn(
+        self,
+        conn,
+        database,
+    ):
+
+        sql = f"""
+    SELECT
+        stg_name,
+        stg_value
+    FROM {database}.{config.advanced.settings_table}
+    WHERE stg_name IN (%s,%s)
+    """
+
+        rows = self.execute_on_connection(
+            conn,
+            sql,
+            (
+                config.filter.country_setting,
+                config.filter.target_setting,
+            ),
+        )
+
+        return {
+            r["stg_name"]: r["stg_value"]
+            for r in rows
+        }
 
     def query(self, host: str, sql: str, database: str | None = None,
               params: tuple[Any, ...] | None = None) -> list[dict]:
