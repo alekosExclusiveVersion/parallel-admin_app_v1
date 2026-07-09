@@ -36,10 +36,18 @@ class CheckWorker(QObject):
     def _check_server(self, server: str):
 
         try:
+            
+            self.status.emit(
+                f"{server}: connecting..."
+            )
 
             with mysql.connect(server) as conn:
 
                 databases = mysql.list_databases_conn(conn)
+
+                self.status.emit(
+                    f"{server}: found {len(databases)} database(s)"
+                )
 
                 for database in databases:
 
@@ -69,7 +77,10 @@ class CheckWorker(QObject):
                             "",
                         )
 
-                    except Exception as ex:
+                    except Exception as ex:      
+                        self.status.emit(
+                            f"{server}/{database}: ERROR"
+                        )
 
                         self.result.emit(
                             server,
@@ -79,8 +90,16 @@ class CheckWorker(QObject):
                             "ERROR",
                             str(ex),
                         )
+                                
+                self.status.emit(
+                    f"{server}: completed"
+                )
 
         except Exception as ex:
+            
+            self.status.emit(
+                f"{server}: {ex}"
+            )
 
             self.result.emit(
                 server,
@@ -93,8 +112,19 @@ class CheckWorker(QObject):
 
     @Slot()
     def run(self):
+        
+        self.started.emit()
+
+        self.status.emit(
+            f"Checking {len(self._servers)} server(s)..."
+        )
 
         if not self._servers:
+
+            self.status.emit(
+                "No servers selected."
+            )
+
             self.finished.emit()
             return
 
@@ -106,4 +136,8 @@ class CheckWorker(QObject):
 
             self._check_server(server)
 
-            self.finished.emit()
+        self.status.emit(
+            "Check finished."
+        )
+
+        self.finished.emit()

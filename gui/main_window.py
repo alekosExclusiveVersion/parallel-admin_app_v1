@@ -65,7 +65,7 @@ class MainWindow(QWidget):
         )
 
         self.worker.progress.connect(
-            self.progress.setValue
+            self._update_progress
         )
 
         self.worker.status.connect(
@@ -93,7 +93,15 @@ class MainWindow(QWidget):
         self.action_refresh.triggered.connect(
             self._refresh_servers
         )
+    def _update_progress(self, current, total):
 
+        if total == 0:
+            self.progress.setValue(0)
+            return
+
+        percent = int(current * 100 / total)
+
+        self.progress.setValue(percent)
     # ----------------------------------------------------------
     # Repository
     # ----------------------------------------------------------
