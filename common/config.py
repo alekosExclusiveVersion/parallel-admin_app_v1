@@ -32,6 +32,8 @@ class FilterConfig:
     country_setting: str
     target_setting: str
     target_value: str
+    database_prefix: str
+    exclude_database_regex: str
 
 
 @dataclass(frozen=True)
@@ -115,6 +117,17 @@ def load_config(config_file: str | Path | None = None) -> Config:
             country_setting=p.get("filter", "country_setting"),
             target_setting=p.get("filter", "target_setting"),
             target_value=p.get("filter", "target_value"),
+            database_prefix=p.get(
+                "filter",
+                "database_prefix",
+                fallback="ar_",
+            ),
+
+            exclude_database_regex=p.get(
+                "filter",
+                "exclude_database_regex",
+                fallback="",
+            ),
         ),
         logging=LoggingConfig(
             directory=Path(p.get("logging", "directory")),
