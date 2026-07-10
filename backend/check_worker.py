@@ -1,5 +1,8 @@
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed,
+)
 from common.mysql_client import mysql
 from PySide6.QtCore import QObject, Signal, Slot
 from common.config import config
@@ -130,11 +133,30 @@ class CheckWorker(QObject):
 
         total = len(self._servers)
 
-        for index, server in enumerate(self._servers, start=1):
+        with ThreadPoolExecutor(
+            max_workers=config.parallel.workers
+        ) as executor:
 
-            self.progress.emit(index, total)
+            futures = {
+                executor.submit(
+                    self._check_server,
+                    server,
+                ): server
+                for server in self._servers
+            }
 
-            self._check_server(server)
+            completed = 0
+
+            for future in as_completed(futures):
+
+                future.result()
+
+                completed += 1
+
+                self.progress.emit(
+                    completed,
+                    total,
+                )
 
         self.status.emit(
             "Check finished."
