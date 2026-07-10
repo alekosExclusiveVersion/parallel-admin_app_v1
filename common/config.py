@@ -109,7 +109,7 @@ def load_config(config_file: str | Path | None = None) -> Config:
             retry=p.getint("mysql", "retry"),
         ),
         parallel=ParallelConfig(
-            workers=p.getint("parallel", "workers"),
+            workers=p.getint("parallel", "workers", fallback=8,),
             database_workers=p.getint("parallel", "database_workers"),
         ),
         filter=FilterConfig(
