@@ -1,4 +1,3 @@
-import time
 from concurrent.futures import (
     ThreadPoolExecutor,
     as_completed,
@@ -38,9 +37,12 @@ class CheckWorker(QObject):
     
     def _check_server(self, server: str):
 
+        results = []
+        messages = []
+
         try:
             
-            self.status.emit(
+            messages.append(
                 f"{server}: connecting..."
             )
 
@@ -48,7 +50,7 @@ class CheckWorker(QObject):
 
                 databases = mysql.list_databases_conn(conn)
 
-                self.status.emit(
+                messages.append(
                     f"{server}: found {len(databases)} database(s)"
                 )
 
@@ -71,48 +73,56 @@ class CheckWorker(QObject):
                             "-",
                         )
 
-                        self.result.emit(
-                            server,
-                            database,
-                            country,
-                            value,
-                            "OK",
-                            "",
+                        results.append(
+                            (
+                                server,
+                                database,
+                                country,
+                                value,
+                                "OK",
+                                "",
+                            )
                         )
 
                     except Exception as ex:      
-                        self.status.emit(
+                        messages.append(
                             f"{server}/{database}: ERROR"
                         )
 
-                        self.result.emit(
-                            server,
-                            database,
-                            "-",
-                            "-",
-                            "ERROR",
-                            str(ex),
+                        results.append(
+                            (
+                                server,
+                                database,
+                                "-",
+                                "-",
+                                "ERROR",
+                                str(ex),
+                            )
                         )
-                                
-                self.status.emit(
+                
+                messages.append(
                     f"{server}: completed"
                 )
 
         except Exception as ex:
             
-            self.status.emit(
+            messages.append(
                 f"{server}: {ex}"
             )
 
-            self.result.emit(
-                server,
-                "-",
-                "-",
-                "-",
-                "ERROR",
-                str(ex),
+            results.append(
+                (
+                    server,
+                    "-",
+                    "-",
+                    "-",
+                    "ERROR",
+                    str(ex),
+                )
             )
-
+    
+        return results, messages
+    
     @Slot()
     def run(self):
         
@@ -149,7 +159,29 @@ class CheckWorker(QObject):
 
             for future in as_completed(futures):
 
-                future.result()
+                try:
+                    rows, messages = future.result()
+
+                except Exception as ex:
+
+                    self.status.emit(
+                        f"Worker error: {ex}"
+                    )
+
+                    completed += 1
+
+                    self.progress.emit(
+                        completed,
+                        total,
+                    )
+
+                    continue
+
+                for message in messages:
+                    self.status.emit(message)
+
+                for row in rows:
+                    self.result.emit(*row)
 
                 completed += 1
 
