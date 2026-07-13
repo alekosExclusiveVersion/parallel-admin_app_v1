@@ -1,8 +1,12 @@
+import time
+
 from concurrent.futures import (
     ThreadPoolExecutor,
     as_completed,
 )
+
 from common.mysql_client import mysql
+from common.stats import stats
 from PySide6.QtCore import QObject, Signal, Slot
 from common.config import config
 
@@ -155,6 +159,8 @@ class CheckWorker(QObject):
         
         self.started.emit()
 
+        stats.reset()
+
         self.status.emit(
             f"Checking {len(self._servers)} server(s)..."
         )
@@ -196,6 +202,8 @@ class CheckWorker(QObject):
                     )
 
                     completed += 1
+                    
+                    stats.server()
 
                     self.progress.emit(
                         completed,
@@ -208,7 +216,17 @@ class CheckWorker(QObject):
                     self.status.emit(message)
 
                 for row in rows:
+                    
+                    stats.database()
+                    
+                    if row[4] == "OK":
+                        stats.updated_project()
+                    else:
+                        stats.error()
+
                     self.result.emit(*row)
+
+                stats.server()
 
                 completed += 1
 
@@ -216,9 +234,17 @@ class CheckWorker(QObject):
                     completed,
                     total,
                 )
-
+        
         self.status.emit(
             "Check finished."
         )
+        summary = stats.summary()
 
+        self.status.emit("")
+        self.status.emit("========== SUMMARY ==========")
+        self.status.emit(f"Servers   : {summary['servers']}")
+        self.status.emit(f"Databases : {summary['databases']}")
+        self.status.emit(f"Errors    : {summary['errors']}")
+        self.status.emit(f"Elapsed   : {summary['elapsed']:.2f} sec")
+        
         self.finished.emit()
