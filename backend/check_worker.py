@@ -124,6 +124,61 @@ class CheckWorker(QObject):
         return results, messages
     
     @Slot()
+
+    def _check_database(
+        self,
+        server: str,
+        database: str,
+    ):
+
+        try:
+
+            with mysql.connect(
+                server,
+                database,
+            ) as conn:
+
+                settings = mysql.get_settings_conn(
+                    conn,
+                    database,
+                )
+
+                country = settings.get(
+                    config.filter.country_setting,
+                    "-",
+                )
+
+                value = settings.get(
+                    config.filter.target_setting,
+                    "-",
+                )
+
+                return (
+                    (
+                        server,
+                        database,
+                        country,
+                        value,
+                        "OK",
+                        "",
+                    ),
+                    None,
+                )
+
+        except Exception as ex:
+
+            return (
+                (
+                    server,
+                    database,
+                    "-",
+                    "-",
+                    "ERROR",
+                    str(ex),
+                ),
+                f"{server}/{database}: ERROR",
+            )
+        
     def run(self):
         
         self.started.emit()
