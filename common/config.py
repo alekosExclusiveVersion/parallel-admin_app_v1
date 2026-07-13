@@ -110,7 +110,7 @@ def load_config(config_file: str | Path | None = None) -> Config:
         ),
         parallel=ParallelConfig(
             workers=p.getint("parallel", "workers", fallback=8,),
-            database_workers=p.getint("parallel", "database_workers"),
+            database_workers=p.getint("parallel", "database_workers", fallback=4,),
         ),
         filter=FilterConfig(
             country=p.get("filter", "country").lower(),
