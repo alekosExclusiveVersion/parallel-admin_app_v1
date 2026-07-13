@@ -54,17 +54,27 @@ class CheckWorker(QObject):
                 f"{server}: found {len(databases)} database(s)"
             )
 
-            for database in databases:
+            with ThreadPoolExecutor(
+                max_workers=config.parallel.database_workers,
+            ) as executor:
 
-                row, message = self._check_database(
-                    server,
-                    database,
-                )
+                futures = {
+                    executor.submit(
+                        self._check_database,
+                        server,
+                        database,
+                    ): database
+                    for database in databases
+                }
 
-                results.append(row)
+                for future in as_completed(futures):
 
-                if message:
-                    messages.append(message)
+                    row, message = future.result()
+
+                    results.append(row)
+
+                    if message:
+                        messages.append(message)
 
         except Exception as ex:
             
