@@ -45,64 +45,26 @@ class CheckWorker(QObject):
             messages.append(
                 f"{server}: connecting..."
             )
-
+            
             with mysql.connect(server) as conn:
 
                 databases = mysql.list_databases_conn(conn)
 
-                messages.append(
-                    f"{server}: found {len(databases)} database(s)"
+            messages.append(
+                f"{server}: found {len(databases)} database(s)"
+            )
+
+            for database in databases:
+
+                row, message = self._check_database(
+                    server,
+                    database,
                 )
 
-                for database in databases:
+                results.append(row)
 
-                    try:
-
-                        settings = mysql.get_settings_conn(
-                            conn,
-                            database,
-                        )
-
-                        country = settings.get(
-                            config.filter.country_setting,
-                            "-",
-                        )
-
-                        value = settings.get(
-                            config.filter.target_setting,
-                            "-",
-                        )
-
-                        results.append(
-                            (
-                                server,
-                                database,
-                                country,
-                                value,
-                                "OK",
-                                "",
-                            )
-                        )
-
-                    except Exception as ex:      
-                        messages.append(
-                            f"{server}/{database}: ERROR"
-                        )
-
-                        results.append(
-                            (
-                                server,
-                                database,
-                                "-",
-                                "-",
-                                "ERROR",
-                                str(ex),
-                            )
-                        )
-                
-                messages.append(
-                    f"{server}: completed"
-                )
+                if message:
+                    messages.append(message)
 
         except Exception as ex:
             
