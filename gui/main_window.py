@@ -676,6 +676,7 @@ class MainWindow(QWidget):
                 if item:
 
                     item.setBackground(background)
+        self._filter_results()
 
     def clear_results(self):
         self.table.setRowCount(0)
@@ -773,4 +774,38 @@ class MainWindow(QWidget):
 
     def _filter_results(self):
 
-        pass
+        search = self.result_search.text().strip().lower()
+
+        only_errors = self.chk_only_errors.isChecked()
+
+        for row in range(self.table.rowCount()):
+
+            server = self.table.item(row, 0)
+            database = self.table.item(row, 1)
+            status = self.table.item(row, 4)
+
+            server_text = server.text().lower() if server else ""
+            database_text = database.text().lower() if database else ""
+            status_text = status.text() if status else ""
+
+            visible = True
+
+            # Поиск по серверу и базе
+            if search:
+
+                visible = (
+                    search in server_text
+                    or search in database_text
+                )
+
+            # Показывать только ошибки
+            if visible and only_errors:
+
+                visible = (
+                    status_text == "ERROR"
+                )
+
+            self.table.setRowHidden(
+                row,
+                not visible,
+            )
