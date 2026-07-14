@@ -43,8 +43,7 @@ class MySQLClient:
                     autocommit=True,
                     charset="utf8mb4",
                 )
-                yield conn
-                return
+                break
 
             except Exception as ex:
                 last_error = ex
@@ -53,13 +52,15 @@ class MySQLClient:
                 )
                 time.sleep(1)
 
-            finally:
-                if conn:
-                    conn.close()
+        if conn is None:
+            raise RuntimeError(
+                f"Не удалось подключиться к {host}: {last_error}"
+            )
 
-        raise RuntimeError(
-            f"Не удалось подключиться к {host}: {last_error}"
-        )
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def execute_on_connection(
         self,
