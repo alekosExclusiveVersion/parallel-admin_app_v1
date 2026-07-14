@@ -140,18 +140,19 @@ class CheckWorker(QObject):
                     ),
                     None,
                 )
+        except Exception as ex:
 
-        return (
-            (
-                server,
-                database,
-                "-",
-                "-",
-                "ERROR",
-                str(ex),
-            ),
-            f"{server}/{database}: {ex}",
-        )
+            return (
+                (
+                    server,
+                    database,
+                    "-",
+                    "-",
+                    "ERROR",
+                    str(ex),
+                ),
+                f"{server}/{database}: {ex}",
+            )
         
     def run(self):
         
