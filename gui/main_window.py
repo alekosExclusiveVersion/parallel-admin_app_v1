@@ -158,7 +158,15 @@ class MainWindow(QWidget):
 
         self.clear_results()
 
+        self.table.setSortingEnabled(False)
+
         self.progress.setValue(0)
+
+        self.lbl_elapsed_value.setText("00:00:00")
+
+        self.lbl_status_value.setText("Ready")
+
+        self.table.clearSelection()
 
         servers = [
             item.text()
@@ -188,7 +196,12 @@ class MainWindow(QWidget):
     def _check_finished(self):
 
         self.action_check.setEnabled(True)
+        
         self.action_stop.setEnabled(False)
+
+        self.table.setSortingEnabled(True)
+
+        self.progress.setValue(100)
 
         self.lbl_status_value.setText("Ready")
 
@@ -612,6 +625,24 @@ class MainWindow(QWidget):
                 column,
                 item,
             )
+        if status == "ERROR":
+
+            background = QColor(255, 245, 245)
+
+        else:
+
+            background = None
+
+
+        if background:
+
+            for column in range(self.table.columnCount()):
+
+                item = self.table.item(row, column)
+
+                if item:
+
+                    item.setBackground(background)
 
     def clear_results(self):
         self.table.setRowCount(0)
