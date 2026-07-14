@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QToolBar,
     QProgressBar,
     QLineEdit,
+    QCheckBox,
     QPushButton,
     QAbstractItemView,
     QMenu,
@@ -392,6 +393,30 @@ class MainWindow(QWidget):
 
         table_layout.addWidget(QLabel("Results"))
 
+        filter_layout = QHBoxLayout()
+
+        filter_layout.addWidget(QLabel("Search:"))
+
+        self.result_search = QLineEdit()
+        self.result_search.setPlaceholderText(
+            "Server or database..."
+        )
+
+        filter_layout.addWidget(
+            self.result_search,
+            1,
+        )
+
+        self.chk_only_errors = QCheckBox(
+            "Only Errors"
+        )
+
+        filter_layout.addWidget(
+            self.chk_only_errors
+        )
+
+        table_layout.addLayout(filter_layout)
+
         self.table = QTableWidget()
 
         self.table.setColumnCount(6)
@@ -542,6 +567,14 @@ class MainWindow(QWidget):
         self._elapsed_timer.setInterval(1000)
         self._elapsed_timer.timeout.connect(
         self._update_elapsed
+        )
+
+        self.result_search.textChanged.connect(
+            self._filter_results
+        )
+
+        self.chk_only_errors.toggled.connect(
+            self._filter_results
         )
     # --------------------------------------------------------------
     # Slots
@@ -737,3 +770,7 @@ class MainWindow(QWidget):
         self.lbl_elapsed_value.setText(
             f"{h:02}:{m:02}:{s:02}"
         )
+
+    def _filter_results(self):
+
+        pass
