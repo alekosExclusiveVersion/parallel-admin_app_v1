@@ -1,3 +1,5 @@
+from PySide6.QtCore import QTimer
+import time
 from backend.repository import Repository
 from backend.check_worker import CheckWorker
 from PySide6.QtCore import (
@@ -173,13 +175,15 @@ class MainWindow(QWidget):
         self.action_check.setEnabled(False)
         self.action_stop.setEnabled(True)
 
-        self.lbl_status_value.setText("Running")
+        self.lbl_status_value.setText("Checking...")
 
         self.append_log(
             "INFO",
             "Check started.",
         )
+        self._started_at = time.perf_counter()
 
+        self._elapsed_timer.start()
 
     def _check_finished(self):
 
@@ -192,7 +196,9 @@ class MainWindow(QWidget):
             "SUCCESS",
             "Check completed.",
         )
+        self._elapsed_timer.stop()
         
+        self._started_at = None
 
     def _build_ui(self):
         self.setObjectName("MainWindow")
@@ -299,7 +305,7 @@ class MainWindow(QWidget):
         self.lbl_servers_value = QLabel("0 / 0")
 
         self.lbl_elapsed = QLabel("Elapsed:")
-        self.lbl_elapsed_value = QLabel("00:00")
+        self.lbl_elapsed_value = QLabel("00:00:00")
 
         progress_layout.addWidget(self.lbl_status, 0, 0)
         progress_layout.addWidget(self.lbl_status_value, 0, 1)
@@ -313,6 +319,7 @@ class MainWindow(QWidget):
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
+        self.lbl_elapsed_value.setText("00:00:00")
 
         progress_layout.addWidget(self.progress, 1, 0, 1, 6)
 
@@ -515,6 +522,14 @@ class MainWindow(QWidget):
         body.addLayout(right, 3)
 
         root.addLayout(body)
+
+        self._started_at = None
+
+        self._elapsed_timer = QTimer(self)
+        self._elapsed_timer.setInterval(1000)
+        self._elapsed_timer.timeout.connect(
+        self._update_elapsed
+        )
     # --------------------------------------------------------------
     # Slots
     # --------------------------------------------------------------
@@ -674,3 +689,20 @@ class MainWindow(QWidget):
             self.thread.wait()
 
         event.accept()
+    
+    def _update_elapsed(self):
+
+        if self._started_at is None:
+            return
+
+        seconds = int(
+            time.perf_counter() - self._started_at
+        )
+
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        s = seconds % 60
+
+        self.lbl_elapsed_value.setText(
+            f"{h:02}:{m:02}:{s:02}"
+        )
