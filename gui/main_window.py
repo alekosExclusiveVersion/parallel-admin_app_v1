@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QPushButton,
     QAbstractItemView,
+    QApplication,
     QMenu,
 )
 
@@ -683,7 +684,15 @@ class MainWindow(QWidget):
 
     def _show_table_menu(self, pos):
 
+        row = self.table.currentRow()
+
         menu = QMenu(self)
+
+        copy_row = menu.addAction("Copy Row")
+        copy_server = menu.addAction("Copy Server")
+        copy_database = menu.addAction("Copy Database")
+
+        menu.addSeparator()
 
         clear_action = menu.addAction("Clear results")
 
@@ -691,21 +700,55 @@ class MainWindow(QWidget):
             self.table.viewport().mapToGlobal(pos)
         )
 
-        if action == clear_action:
+        if row < 0:
+            return
+
+        if action == copy_row:
+
+            self._copy_row(row)
+
+        elif action == copy_server:
+
+            QApplication.clipboard().setText(
+                self.table.item(row, 0).text()
+            )
+
+        elif action == copy_database:
+
+            QApplication.clipboard().setText(
+                self.table.item(row, 1).text()
+            )
+
+        elif action == clear_action:
+
             self.clear_results()
 
     def _table_double_click(self, item):
 
-        row = item.row()
+        self._copy_row(
+            item.row()
+        )
 
-        server = self.table.item(row, 0)
+    def _copy_row(self, row: int):
 
-        if server:
-            self.append_log(
-                "INFO",
-                f"Selected server: {server.text()}"
+        values = []
+
+        for column in range(self.table.columnCount()):
+
+            item = self.table.item(row, column)
+
+            values.append(
+                item.text() if item else ""
             )
 
+        QApplication.clipboard().setText(
+            "\t".join(values)
+        )
+
+        self.append_log(
+            "SUCCESS",
+            "Row copied to clipboard."
+        )
     # ----------------------------------------------------------
     # Log Methods
     # ----------------------------------------------------------
