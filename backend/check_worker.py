@@ -218,9 +218,9 @@ class CheckWorker(QObject):
                 for row in rows:
                     
                     stats.database()
-                    
+
                     if row[4] == "OK":
-                        stats.updated_project()
+                        stats.success()
                     else:
                         stats.error()
 

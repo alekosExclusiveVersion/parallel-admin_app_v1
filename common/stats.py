@@ -15,9 +15,7 @@ from dataclasses import dataclass, asdict
 class StatisticsSnapshot:
     servers: int
     databases: int
-    projects: int
-    updated: int
-    skipped: int
+    success: int
     errors: int
     elapsed: float
     servers_per_sec: float
@@ -34,10 +32,8 @@ class Statistics:
             self.started = time.time()
             self.servers = 0
             self.databases = 0
-            self.projects = 0
-            self.updated = 0
-            self.skipped = 0
-            self.errors = 0
+            self._success = 0
+            self._errors = 0
 
     def server(self, count: int = 1) -> None:
         with self._lock:
@@ -47,21 +43,13 @@ class Statistics:
         with self._lock:
             self.databases += count
 
-    def project(self, count: int = 1) -> None:
+    def success(self, count: int = 1):
         with self._lock:
-            self.projects += count
-
-    def updated_project(self, count: int = 1) -> None:
-        with self._lock:
-            self.updated += count
-
-    def skipped_project(self, count: int = 1) -> None:
-        with self._lock:
-            self.skipped += count
+            self._success += count
 
     def error(self, count: int = 1) -> None:
         with self._lock:
-            self.errors += count
+            self._errors += count
 
     @property
     def elapsed(self) -> float:
@@ -73,10 +61,8 @@ class Statistics:
             return StatisticsSnapshot(
                 servers=self.servers,
                 databases=self.databases,
-                projects=self.projects,
-                updated=self.updated,
-                skipped=self.skipped,
-                errors=self.errors,
+                success=self._success,
+                errors=self._errors,
                 elapsed=elapsed,
                 servers_per_sec=self.servers / elapsed if elapsed else 0.0,
                 databases_per_sec=self.databases / elapsed if elapsed else 0.0,
@@ -92,9 +78,8 @@ stats = Statistics()
 if __name__ == "__main__":
     stats.server()
     stats.database(12)
-    stats.project(10)
-    stats.updated_project(9)
-    stats.skipped_project(1)
+    stats.success(9)
+    stats.error(3)
 
     from pprint import pprint
     pprint(stats.summary())
