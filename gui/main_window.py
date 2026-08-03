@@ -1,4 +1,5 @@
 import csv
+from datetime import datetime
 from PySide6.QtCore import QTimer
 import time
 from backend.repository import Repository
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QMenu,
+    QSplitter,
 )
 
 
@@ -226,6 +228,8 @@ class MainWindow(QWidget):
         self.action_stop.setEnabled(False)
 
         self.table.setSortingEnabled(True)
+
+        self.table.resizeColumnsToContents()
 
         self.progress.setValue(100)
 
@@ -461,12 +465,7 @@ class MainWindow(QWidget):
 
         header.setStretchLastSection(False)
 
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.Stretch)
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(QHeaderView.Interactive)
 
         self.table.setAlternatingRowColors(True)
 
@@ -508,8 +507,6 @@ class MainWindow(QWidget):
 
         table_layout.addWidget(self.table)
 
-        right.addWidget(table_frame, 3)
-
         # ----------------------------------------------------------
         # Log Panel UI
         # ----------------------------------------------------------
@@ -541,7 +538,12 @@ class MainWindow(QWidget):
 
         log_layout.addWidget(self.log)
 
-        right.addWidget(log_frame, 1)
+        right_splitter = QSplitter(Qt.Vertical)
+        right_splitter.addWidget(table_frame)
+        right_splitter.addWidget(log_frame)
+        right_splitter.setSizes([600, 200])
+        right_splitter.setChildrenCollapsible(False)
+        right.addWidget(right_splitter)
 
         self.append_log("INFO", "Parallel Admin started.")
         self.append_log("SUCCESS", "GUI initialized.")
@@ -796,8 +798,14 @@ class MainWindow(QWidget):
 
         color = colors.get(level.upper(), "#212121")
 
+        stamp = datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
         self.log.append(
-            f'<span style="color:{color};"><b>[{level.upper()}]</b></span> {message}'
+            f'<span style="color:#7f8c8d;">{stamp}</span> '
+            f'<span style="color:{color};"><b>[{level.upper()}]</b></span> '
+            f'{message}'
         )
 
         self.log.moveCursor(QTextCursor.End)

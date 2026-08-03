@@ -5,10 +5,13 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QLabel,
+    QMessageBox,
 )
 
+from common.config import config
 from common.mysql_client import mysql
 from common.mysql_session import session
+from backend.repository import Repository
 
 
 class LoginDialog(QDialog):
@@ -39,6 +42,7 @@ class LoginDialog(QDialog):
         form = QFormLayout()
 
         self.user = QLineEdit()
+        self.user.setText(config.mysql.user)
 
         self.password = QLineEdit()
         self.password.setEchoMode(
@@ -76,12 +80,55 @@ class LoginDialog(QDialog):
     def _accept(self):
 
         if not self.user.text().strip():
+            self._show_error(
+                "Enter the MySQL user."
+            )
             return
 
         if not self.password.text():
+            self._show_error(
+                "Enter the MySQL password."
+            )
             return
 
         session.user = self.user.text()
         session.password = self.password.text()
 
+        self.btn_connect.setEnabled(False)
+        self.btn_connect.setText("Checking...")
+        self.btn_connect.repaint()
+
+        try:
+
+            servers = Repository().load_servers()
+
+            if not servers:
+                raise RuntimeError(
+                    "No servers found in servers.txt"
+                )
+
+            with mysql.connect(servers[0]):
+                pass
+
+        except Exception as ex:
+
+            self.btn_connect.setEnabled(True)
+            self.btn_connect.setText("Connect")
+
+            self._show_error(
+                f"Connection failed: {ex}"
+            )
+            return
+
+        self.btn_connect.setEnabled(True)
+        self.btn_connect.setText("Connect")
+
         self.accept()
+
+    def _show_error(self, message):
+
+        QMessageBox.warning(
+            self,
+            "MySQL Connection",
+            message,
+        )

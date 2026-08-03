@@ -162,22 +162,58 @@ class CheckWorker(QObject):
 
         except Exception as ex:
 
+            messages.append(
+                f"{server}/{databases[0]}: batch query failed, "
+                f"retrying per database ({ex})"
+            )
+
             for database in databases:
 
-                rows.append(
-                    (
+                try:
+
+                    with mysql.connect(
                         server,
                         database,
-                        "-",
-                        "-",
-                        "ERROR",
-                        str(ex),
-                    )
-                )
+                    ) as conn:
 
-            messages.append(
-                f"{server}/{databases[0]}: {ex}"
-            )
+                        settings = mysql.get_settings_conn(
+                            conn,
+                            database,
+                        )
+
+                    rows.append(
+                        (
+                            server,
+                            database,
+                            settings.get(
+                                config.filter.country_setting,
+                                "-",
+                            ),
+                            settings.get(
+                                config.filter.target_setting,
+                                "-",
+                            ),
+                            "OK",
+                            "",
+                        )
+                    )
+
+                except Exception as db_ex:
+
+                    rows.append(
+                        (
+                            server,
+                            database,
+                            "-",
+                            "-",
+                            "ERROR",
+                            str(db_ex),
+                        )
+                    )
+
+                    messages.append(
+                        f"{server}/{database}: {db_ex}"
+                    )
 
         return rows, messages
 

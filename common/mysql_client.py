@@ -34,8 +34,8 @@ class MySQLClient:
             try:
                 conn = pymysql.connect(
                     host=host,
-                    user=session.user,
-                    password=session.password,
+                    user=session.user or self.cfg.user,
+                    password=session.password or self.cfg.password,
                     database=database,
                     connect_timeout=self.cfg.connect_timeout,
                     read_timeout=self.cfg.read_timeout,
