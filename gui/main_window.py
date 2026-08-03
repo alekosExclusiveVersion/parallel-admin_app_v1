@@ -1,9 +1,11 @@
 import csv
+import re
+import time
 from datetime import datetime
 from PySide6.QtCore import QTimer
-import time
 from backend.repository import Repository
 from backend.check_worker import CheckWorker
+from backend.query_worker import QueryWorker
 from common.sql_builder import sql_builder
 from common.version import APP_VERSION
 from PySide6.QtCore import (
@@ -16,9 +18,12 @@ from PySide6.QtGui import (
     QColor,
     QBrush,
     QFont,
+    QFontDatabase,
     QIcon,
+    QKeySequence,
     QPainter,
     QPixmap,
+    QShortcut,
     QTextCursor,
 )
 
@@ -45,11 +50,14 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QMenu,
+    QMessageBox,
     QSplitter,
     QPlainTextEdit,
     QStyledItemDelegate,
     QTabWidget,
 )
+
+from gui.sql_highlighter import SQLHighlighter
 
 
 class ComboItemDelegate(QStyledItemDelegate):
@@ -63,6 +71,36 @@ class ComboItemDelegate(QStyledItemDelegate):
         )
 
 
+WRITE_KEYWORDS = {
+    "UPDATE", "INSERT", "DELETE", "ALTER", "DROP", "TRUNCATE",
+    "REPLACE", "CREATE", "GRANT", "REVOKE", "RENAME", "CALL",
+    "LOCK", "UNLOCK", "KILL", "LOAD", "SET",
+}
+
+
+def is_write_statement(sql: str) -> bool:
+    """True, если запрос может изменять данные."""
+    cleaned = re.sub(
+        r"/\*.*?\*/",
+        " ",
+        sql,
+        flags=re.DOTALL,
+    )
+    cleaned = re.sub(
+        r"(--|#)[^\n]*",
+        " ",
+        cleaned,
+    )
+    tokens = re.findall(
+        r"\b[A-Z_]+\b",
+        cleaned.upper(),
+    )
+    return any(
+        token in WRITE_KEYWORDS
+        for token in tokens
+    )
+
+
 class MainWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -71,6 +109,7 @@ class MainWindow(QWidget):
         
         self._build_ui()
         self._create_backend()
+        self._create_query_backend()
 
         self._load_servers()
 
@@ -154,6 +193,39 @@ class MainWindow(QWidget):
         self.action_refresh.triggered.connect(
             self._refresh_servers
         )
+
+    def _create_query_backend(self):
+
+        self.query_thread = QThread(self)
+
+        self.query_worker = QueryWorker()
+
+        self.query_worker.moveToThread(self.query_thread)
+
+        self.query_thread.started.connect(
+            self.query_worker.run
+        )
+
+        self.query_worker.finished.connect(
+            self.query_thread.quit
+        )
+
+        self.query_worker.query.connect(
+            self._append_query
+        )
+
+        self.query_worker.result.connect(
+            self._show_query_result
+        )
+
+        self.query_worker.error.connect(
+            self._sql_error
+        )
+
+        self.query_worker.databases.connect(
+            self._show_databases
+        )
+
     def _update_progress(self, current, total):
 
         if total == 0:
@@ -175,6 +247,18 @@ class MainWindow(QWidget):
 
         if servers:
             self.server_list.addItems(servers)
+
+        current_server = self.cb_server.currentText()
+
+        self.cb_server.blockSignals(True)
+
+        self.cb_server.clear()
+        self.cb_server.addItems(servers)
+
+        if current_server:
+            self.cb_server.setCurrentText(current_server)
+
+        self.cb_server.blockSignals(False)
 
         count = len(servers)
 
@@ -982,14 +1066,154 @@ class MainWindow(QWidget):
 
         queries_layout.addLayout(qbuttons)
 
+        # ----------------------------------------------------------
+        # SQL Console Panel UI
+        # ----------------------------------------------------------
+
+        sql_console_frame = QFrame()
+
+        sql_console_layout = QVBoxLayout(sql_console_frame)
+        sql_console_layout.setContentsMargins(10, 10, 10, 10)
+        sql_console_layout.setSpacing(8)
+
+        sctop = QHBoxLayout()
+
+        self.lbl_sql_console = QLabel("SQL Console")
+        self.lbl_sql_console.setObjectName("SectionTitle")
+        sctop.addWidget(self.lbl_sql_console)
+
+        sctop.addStretch()
+
+        self.btn_sql_refresh_db = QToolButton()
+        self.btn_sql_refresh_db.setObjectName("btn_icon")
+        self.btn_sql_refresh_db.setText("\u27F3")
+        self.btn_sql_refresh_db.setToolTip("Refresh databases")
+
+        self.btn_sql_clear = QToolButton()
+        self.btn_sql_clear.setObjectName("btn_icon")
+        self.btn_sql_clear.setText("\u2715")
+        self.btn_sql_clear.setToolTip("Clear console")
+
+        sctop.addWidget(self.btn_sql_refresh_db)
+        sctop.addWidget(self.btn_sql_clear)
+
+        sql_console_layout.addLayout(sctop)
+
+        scontrols = QHBoxLayout()
+
+        self.cb_server = QComboBox()
+        self.cb_server.setEditable(True)
+        self.cb_server.setMinimumWidth(180)
+        self.cb_server.setSizeAdjustPolicy(
+            QComboBox.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.cb_server.lineEdit().setStyleSheet(
+            "border:none;background:transparent;padding:0;"
+        )
+        self.cb_server.view().setItemDelegate(
+            ComboItemDelegate(self.cb_server.view())
+        )
+
+        self.cb_database = QComboBox()
+        self.cb_database.setEditable(True)
+        self.cb_database.setMinimumWidth(160)
+        self.cb_database.setSizeAdjustPolicy(
+            QComboBox.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.cb_database.lineEdit().setStyleSheet(
+            "border:none;background:transparent;padding:0;"
+        )
+        self.cb_database.view().setItemDelegate(
+            ComboItemDelegate(self.cb_database.view())
+        )
+
+        scontrols.addWidget(self.cb_server)
+        scontrols.addWidget(self.cb_database)
+
+        self.chk_write = QCheckBox("Allow write queries")
+        scontrols.addWidget(self.chk_write)
+
+        scontrols.addStretch()
+
+        self.btn_sql_run = QPushButton("Run")
+        self.btn_sql_run.setObjectName("btn_primary")
+        self.btn_sql_run.setToolTip("Run query (Ctrl+Enter)")
+
+        scontrols.addWidget(self.btn_sql_run)
+
+        sql_console_layout.addLayout(scontrols)
+
+        sql_editor_splitter = QSplitter(Qt.Vertical)
+        sql_editor_splitter.setChildrenCollapsible(False)
+
+        self.sql_editor = QPlainTextEdit()
+        self.sql_editor.setLineWrapMode(
+            QPlainTextEdit.NoWrap
+        )
+        self.sql_editor.setPlaceholderText(
+            "Write SQL query... Ctrl+Enter to run"
+        )
+        self.sql_editor.setTabStopDistance(40)
+
+        console_font = QFontDatabase.systemFont(
+            QFontDatabase.FixedFont
+        )
+        console_font.setPointSize(12)
+        self.sql_editor.setFont(console_font)
+
+        sql_editor_splitter.addWidget(self.sql_editor)
+
+        sql_results_widget = QWidget()
+        sql_results_layout = QVBoxLayout(sql_results_widget)
+        sql_results_layout.setContentsMargins(0, 0, 0, 0)
+        sql_results_layout.setSpacing(4)
+
+        self.lbl_sql_status = QLabel("Ready")
+        self.lbl_sql_status.setStyleSheet(
+            "color:#7f8c8d;font-size:12px;"
+        )
+
+        sql_results_layout.addWidget(self.lbl_sql_status)
+
+        self.sql_table = QTableWidget()
+
+        self.sql_table.verticalHeader().setVisible(False)
+
+        self.sql_table.setAlternatingRowColors(True)
+
+        self.sql_table.setSelectionBehavior(
+            QTableWidget.SelectRows
+        )
+
+        self.sql_table.setSelectionMode(
+            QTableWidget.SingleSelection
+        )
+
+        self.sql_table.setEditTriggers(
+            QTableWidget.NoEditTriggers
+        )
+
+        self.sql_table.setShowGrid(False)
+
+        self.sql_table.setWordWrap(True)
+
+        sql_results_layout.addWidget(self.sql_table)
+
+        sql_editor_splitter.addWidget(sql_results_widget)
+
+        sql_editor_splitter.setSizes([160, 160])
+
+        sql_console_layout.addWidget(sql_editor_splitter)
+
         tabs = QTabWidget()
         tabs.addTab(log_frame, "Log")
         tabs.addTab(queries_frame, "Queries")
 
         right_splitter = QSplitter(Qt.Vertical)
+        right_splitter.addWidget(sql_console_frame)
         right_splitter.addWidget(table_frame)
         right_splitter.addWidget(tabs)
-        right_splitter.setSizes([600, 200])
+        right_splitter.setSizes([200, 350, 200])
         right_splitter.setChildrenCollapsible(False)
         right.addWidget(right_splitter)
 
@@ -1046,6 +1270,30 @@ class MainWindow(QWidget):
 
         self.btn_rerun.clicked.connect(
             self._run_check
+        )
+
+        self.btn_sql_refresh_db.clicked.connect(
+            self._sql_refresh_databases
+        )
+
+        self.btn_sql_clear.clicked.connect(
+            self._sql_clear
+        )
+
+        self.btn_sql_run.clicked.connect(
+            self._sql_run
+        )
+
+        self.sql_run_shortcut = QShortcut(
+            QKeySequence("Ctrl+Return"),
+            self,
+        )
+        self.sql_run_shortcut.activated.connect(
+            self._sql_run
+        )
+
+        self.sql_highlighter = SQLHighlighter(
+            self.sql_editor.document()
         )
         body_splitter.addWidget(right_container)
         body_splitter.setSizes([300, 900])
@@ -1309,6 +1557,140 @@ class MainWindow(QWidget):
             "Query template applied.",
         )
 
+    # ----------------------------------------------------------
+    # SQL Console
+    # ----------------------------------------------------------
+
+    def _sql_run(self):
+
+        if self.query_thread.isRunning():
+            return
+
+        sql = self.sql_editor.toPlainText().strip()
+
+        if not sql:
+            return
+
+        host = self.cb_server.currentText().strip()
+
+        if not host:
+            self._sql_error("No server selected.")
+            return
+
+        database = self.cb_database.currentText().strip()
+
+        if not self.chk_write.isChecked() and is_write_statement(sql):
+            answer = QMessageBox.question(
+                self,
+                "Write query",
+                "The query may modify data.\n\nContinue?",
+            )
+
+            if answer != QMessageBox.Yes:
+                return
+
+        self.lbl_sql_status.setText("Running...")
+        self._sql_busy(True)
+
+        self.query_worker.set_request(
+            host,
+            database,
+            sql,
+            1000,
+        )
+
+        self.query_thread.start()
+
+    def _sql_refresh_databases(self):
+
+        if self.query_thread.isRunning():
+            return
+
+        host = self.cb_server.currentText().strip()
+
+        if not host:
+            self._sql_error("No server selected.")
+            return
+
+        self.lbl_sql_status.setText("Loading databases...")
+        self._sql_busy(True)
+
+        self.query_worker.set_databases_request(host)
+
+        self.query_thread.start()
+
+    def _sql_clear(self):
+
+        self.sql_editor.clear()
+        self.sql_table.setColumnCount(0)
+        self.sql_table.setRowCount(0)
+        self.lbl_sql_status.setText("Ready")
+
+    def _sql_busy(self, busy):
+
+        self.btn_sql_run.setEnabled(not busy)
+        self.btn_sql_refresh_db.setEnabled(not busy)
+        self.cb_server.setEnabled(not busy)
+        self.cb_database.setEnabled(not busy)
+
+    def _show_query_result(self, rows, columns, message):
+
+        self.sql_table.clear()
+        self.sql_table.setColumnCount(len(columns))
+        self.sql_table.setRowCount(len(rows))
+        self.sql_table.setHorizontalHeaderLabels(columns)
+
+        for r, row in enumerate(rows):
+            for c, value in enumerate(row):
+                self.sql_table.setItem(
+                    r,
+                    c,
+                    QTableWidgetItem(value),
+                )
+
+        header = self.sql_table.horizontalHeader()
+
+        header.setSectionResizeMode(
+            QHeaderView.ResizeToContents
+        )
+
+        header.setStretchLastSection(True)
+
+        if columns:
+            self.sql_table.resizeColumnToContents(0)
+
+        self.lbl_sql_status.setText(message)
+        self._sql_busy(False)
+
+    def _sql_error(self, message):
+
+        self.lbl_sql_status.setText(f"Error: {message}")
+        self._sql_busy(False)
+
+        self.append_log(
+            "ERROR",
+            f"SQL: {message}",
+        )
+
+    def _show_databases(self, names):
+
+        current = self.cb_database.currentText()
+
+        self.cb_database.blockSignals(True)
+
+        self.cb_database.clear()
+        self.cb_database.addItems(names)
+
+        if current:
+            self.cb_database.setCurrentText(current)
+
+        self.cb_database.blockSignals(False)
+
+        self.lbl_sql_status.setText(
+            f"{len(names)} database(s) loaded."
+        )
+        self._sql_busy(False)
+
     def _save_log(self):
 
         filename, _ = QFileDialog.getSaveFileName(
@@ -1348,6 +1730,12 @@ class MainWindow(QWidget):
             if not self.thread.wait(5000):
                 self.thread.terminate()
                 self.thread.wait()
+
+        if self.query_thread.isRunning():
+            self.query_thread.quit()
+            if not self.query_thread.wait(5000):
+                self.query_thread.terminate()
+                self.query_thread.wait()
 
         event.accept()
     
