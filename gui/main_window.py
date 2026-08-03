@@ -139,8 +139,8 @@ class MainWindow(QWidget):
             f"{count} / {count}"
         )
 
-        self.selected_label.setText(
-            "Selected: 0"
+        self.lbl_servers_title.setText(
+            "Servers — Selected: 0"
         )
 
         self.append_log(
@@ -263,15 +263,12 @@ class MainWindow(QWidget):
             background:#f3f5f7;
         }
 
-        QLabel#Title{
-            font-size:22px;
+        QLabel#SectionTitle{
+            font-size:15px;
             font-weight:700;
             color:#2d3436;
-        }
-
-        QLabel#Subtitle{
-            color:#636e72;
-            margin-bottom:6px;
+            border:none;
+            background:transparent;
         }
 
         QFrame{
@@ -298,11 +295,24 @@ class MainWindow(QWidget):
             spacing:6px;
         }
 
+        QToolButton{
+            border:1px solid #d0d7de;
+            border-radius:4px;
+            background:white;
+            padding:6px 14px;
+            text-align:center;
+        }
+
+        QToolButton:hover{
+            background:#f5f5f5;
+        }
+
         QPushButton{
             min-height:28px;
             border:1px solid #d0d7de;
             border-radius:4px;
             background:white;
+            text-align:center;
         }
 
         QPushButton:hover{
@@ -380,29 +390,20 @@ class MainWindow(QWidget):
 
         root.addWidget(progress_frame)
 
-        title = QLabel("Parallel Admin")
-        title.setObjectName("Title")
-
-        subtitle = QLabel("Mass administration tool")
-        subtitle.setObjectName("Subtitle")
-
-        root.addWidget(title)
-        root.addWidget(subtitle)
-
-        body = QHBoxLayout()
-        body.setSpacing(12)
+        body_splitter = QSplitter(Qt.Horizontal)
+        body_splitter.setChildrenCollapsible(False)
 
         server_frame = QFrame()
+        server_frame.setMinimumWidth(200)
         server_layout = QVBoxLayout(server_frame)
 
-        server_layout.addWidget(QLabel("Servers"))
+        self.lbl_servers_title = QLabel("Servers — Selected: 0")
+        self.lbl_servers_title.setObjectName("SectionTitle")
+        server_layout.addWidget(self.lbl_servers_title)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search server...")
         server_layout.addWidget(self.search)
-
-        self.selected_label = QLabel("Selected: 0")
-        server_layout.addWidget(self.selected_label)
 
         buttons = QHBoxLayout()
 
@@ -423,16 +424,20 @@ class MainWindow(QWidget):
 
         server_layout.addWidget(self.server_list)
 
-        body.addWidget(server_frame, 1)
+        body_splitter.addWidget(server_frame)
 
-        right = QVBoxLayout()
+        right_container = QWidget()
+
+        right = QVBoxLayout(right_container)
         table_frame = QFrame()
 
         table_layout = QVBoxLayout(table_frame)
         table_layout.setContentsMargins(10, 10, 10, 10)
         table_layout.setSpacing(8)
 
-        table_layout.addWidget(QLabel("Results"))
+        self.lbl_results = QLabel("Results")
+        self.lbl_results.setObjectName("SectionTitle")
+        table_layout.addWidget(self.lbl_results)
 
         filter_layout = QHBoxLayout()
 
@@ -559,7 +564,9 @@ class MainWindow(QWidget):
 
         top = QHBoxLayout()
 
-        top.addWidget(QLabel("Log"))
+        self.lbl_log = QLabel("Log")
+        self.lbl_log.setObjectName("SectionTitle")
+        top.addWidget(self.lbl_log)
 
         top.addStretch()
 
@@ -590,7 +597,9 @@ class MainWindow(QWidget):
 
         qtop = QHBoxLayout()
 
-        qtop.addWidget(QLabel("Query log"))
+        self.lbl_query_log = QLabel("Query log")
+        self.lbl_query_log.setObjectName("SectionTitle")
+        qtop.addWidget(self.lbl_query_log)
 
         qtop.addStretch()
 
@@ -606,7 +615,9 @@ class MainWindow(QWidget):
 
         queries_layout.addWidget(self.query_log)
 
-        queries_layout.addWidget(QLabel("Scan template"))
+        self.lbl_scan_template = QLabel("Scan template")
+        self.lbl_scan_template.setObjectName("SectionTitle")
+        queries_layout.addWidget(self.lbl_scan_template)
 
         self.query_editor = QPlainTextEdit()
         self.query_editor.setLineWrapMode(
@@ -701,9 +712,10 @@ class MainWindow(QWidget):
         self.btn_rerun.clicked.connect(
             self._run_check
         )
-        body.addLayout(right, 3)
+        body_splitter.addWidget(right_container)
+        body_splitter.setSizes([300, 900])
 
-        root.addLayout(body)
+        root.addWidget(body_splitter)
 
         self._started_at = None
 
@@ -733,8 +745,8 @@ class MainWindow(QWidget):
     # --------------------------------------------------------------
 
     def _update_selected_count(self):
-        self.selected_label.setText(
-            f"Selected: {len(self.server_list.selectedItems())}"
+        self.lbl_servers_title.setText(
+            f"Servers — Selected: {len(self.server_list.selectedItems())}"
         )
 
     def _invert_selection(self):
