@@ -24,6 +24,10 @@ from common.sql_builder import sql_builder
 class MySQLClient:
     def __init__(self) -> None:
         self.cfg = config.mysql
+        self._query_hook = None
+
+    def set_query_hook(self, hook) -> None:
+        self._query_hook = hook
 
     @contextmanager
     def connect(self, host: str, database: str | None = None):
@@ -69,6 +73,12 @@ class MySQLClient:
         sql: str,
         params=None,
     ):
+
+        if self._query_hook is not None:
+            self._query_hook(
+                sql,
+                getattr(conn, "host", ""),
+            )
 
         with conn.cursor() as cur:
 

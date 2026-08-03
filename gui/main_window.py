@@ -4,6 +4,7 @@ from PySide6.QtCore import QTimer
 import time
 from backend.repository import Repository
 from backend.check_worker import CheckWorker
+from common.sql_builder import sql_builder
 from PySide6.QtCore import (
     Qt,
     QThread,
@@ -38,6 +39,8 @@ from PySide6.QtWidgets import (
     QApplication,
     QMenu,
     QSplitter,
+    QPlainTextEdit,
+    QTabWidget,
 )
 
 
@@ -85,6 +88,10 @@ class MainWindow(QWidget):
 
         self.worker.result.connect(
             self.add_result
+        )
+
+        self.worker.query.connect(
+            self._append_query
         )
 
         self.thread.started.connect(
@@ -571,9 +578,74 @@ class MainWindow(QWidget):
 
         log_layout.addWidget(self.log)
 
+        # ----------------------------------------------------------
+        # Queries Panel UI
+        # ----------------------------------------------------------
+
+        queries_frame = QFrame()
+
+        queries_layout = QVBoxLayout(queries_frame)
+        queries_layout.setContentsMargins(10, 10, 10, 10)
+        queries_layout.setSpacing(8)
+
+        qtop = QHBoxLayout()
+
+        qtop.addWidget(QLabel("Query log"))
+
+        qtop.addStretch()
+
+        self.btn_query_clear = QPushButton("Clear")
+
+        qtop.addWidget(self.btn_query_clear)
+
+        queries_layout.addLayout(qtop)
+
+        self.query_log = QPlainTextEdit()
+        self.query_log.setReadOnly(True)
+        self.query_log.setMaximumBlockCount(2000)
+
+        queries_layout.addWidget(self.query_log)
+
+        queries_layout.addWidget(QLabel("Scan template"))
+
+        self.query_editor = QPlainTextEdit()
+        self.query_editor.setLineWrapMode(
+            QPlainTextEdit.NoWrap
+        )
+        self.query_editor.setPlainText(
+            sql_builder.scan_template
+        )
+
+        queries_layout.addWidget(self.query_editor)
+
+        hint = QLabel(
+            "Placeholders: {db} {dbq} {table} {country} {target}"
+        )
+        hint.setStyleSheet(
+            "color:#7f8c8d;font-size:12px;"
+        )
+
+        queries_layout.addWidget(hint)
+
+        qbuttons = QHBoxLayout()
+
+        qbuttons.addStretch()
+
+        self.btn_apply = QPushButton("Apply")
+        self.btn_rerun = QPushButton("Run check")
+
+        qbuttons.addWidget(self.btn_apply)
+        qbuttons.addWidget(self.btn_rerun)
+
+        queries_layout.addLayout(qbuttons)
+
+        tabs = QTabWidget()
+        tabs.addTab(log_frame, "Log")
+        tabs.addTab(queries_frame, "Queries")
+
         right_splitter = QSplitter(Qt.Vertical)
         right_splitter.addWidget(table_frame)
-        right_splitter.addWidget(log_frame)
+        right_splitter.addWidget(tabs)
         right_splitter.setSizes([600, 200])
         right_splitter.setChildrenCollapsible(False)
         right.addWidget(right_splitter)
@@ -616,6 +688,18 @@ class MainWindow(QWidget):
 
         self.btn_log_save.clicked.connect(
             self._save_log
+        )
+
+        self.btn_query_clear.clicked.connect(
+            self.query_log.clear
+        )
+
+        self.btn_apply.clicked.connect(
+            self._apply_query_template
+        )
+
+        self.btn_rerun.clicked.connect(
+            self._run_check
         )
         body.addLayout(right, 3)
 
@@ -852,6 +936,31 @@ class MainWindow(QWidget):
         )
 
         self.log.moveCursor(QTextCursor.End)
+
+    # ----------------------------------------------------------
+    # Query Panel
+    # ----------------------------------------------------------
+
+    def _append_query(self, text):
+
+        stamp = datetime.now().strftime(
+            "%H:%M:%S"
+        )
+
+        self.query_log.appendPlainText(
+            f"[{stamp}] {text}"
+        )
+
+    def _apply_query_template(self):
+
+        sql_builder.set_custom_template(
+            self.query_editor.toPlainText()
+        )
+
+        self.append_log(
+            "SUCCESS",
+            "Query template applied.",
+        )
 
     def _save_log(self):
 

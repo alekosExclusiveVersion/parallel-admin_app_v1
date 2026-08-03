@@ -17,6 +17,7 @@ class CheckWorker(QObject):
     finished = Signal()
     progress = Signal(int, int)
     status = Signal(str)
+    query = Signal(str)
     result = Signal(
         str,
         str,
@@ -217,10 +218,17 @@ class CheckWorker(QObject):
 
         return rows, messages
 
+    def _log_query(self, sql, host):
+
+        if not sql.strip().upper().startswith("SHOW"):
+            self.query.emit(f"[{host}] {sql}")
+
     @Slot()    
     def run(self):
         
         self._stop_requested = False
+
+        mysql.set_query_hook(self._log_query)
         
         self.started.emit()
 
@@ -235,6 +243,8 @@ class CheckWorker(QObject):
             self.status.emit(
                 "No servers selected."
             )
+
+            mysql.set_query_hook(None)
 
             self.finished.emit()
             return
@@ -332,5 +342,7 @@ class CheckWorker(QObject):
         self.status.emit(f"Databases : {summary['databases']}")
         self.status.emit(f"Errors    : {summary['errors']}")
         self.status.emit(f"Elapsed   : {summary['elapsed']:.2f} sec")
-        
+
+        mysql.set_query_hook(None)
+
         self.finished.emit()
