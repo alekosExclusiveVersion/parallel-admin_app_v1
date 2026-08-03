@@ -20,6 +20,7 @@ htmlcov/
 
 #logs
 logs/
+*.log
 
 # Type checkers
 .mypy_cache/

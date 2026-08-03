@@ -7,6 +7,7 @@ from concurrent.futures import (
 
 from common.mysql_client import mysql
 from common.stats import stats
+from common.sql_builder import sql_builder
 from PySide6.QtCore import QObject, Signal, Slot
 from common.config import config
 
@@ -28,9 +29,14 @@ class CheckWorker(QObject):
     def __init__(self):
         super().__init__()
         self._servers = []
+        self._stop_requested = False
 
     def set_servers(self, servers):
         self._servers = list(servers)
+    
+    def stop(self):
+
+        self._stop_requested = True
 
     @property
     def servers(self):
@@ -43,6 +49,9 @@ class CheckWorker(QObject):
 
         results = []
         messages = []
+
+        if self._stop_requested:
+            return results, messages
 
         try:
             
@@ -58,27 +67,46 @@ class CheckWorker(QObject):
                 f"{server}: found {len(databases)} database(s)"
             )
 
-            with ThreadPoolExecutor(
-                max_workers=config.parallel.database_workers,
-            ) as executor:
+            batches = list(
+                sql_builder.chunk(
+                    databases,
+                    config.advanced.batch_size,
+                )
+            )
 
-                futures = {
-                    executor.submit(
-                        self._check_database,
-                        server,
-                        database,
-                    ): database
-                    for database in databases
-                }
+            executor = ThreadPoolExecutor(
+                max_workers=config.parallel.database_workers,
+            )
+
+            futures = {
+                executor.submit(
+                    self._check_batch,
+                    server,
+                    batch,
+                ): batch
+                for batch in batches
+            }
+
+            try:
 
                 for future in as_completed(futures):
 
-                    row, message = future.result()
+                    if self._stop_requested:
 
-                    results.append(row)
+                        for pending in futures:
+                            pending.cancel()
 
-                    if message:
-                        messages.append(message)
+                        break
+
+                    rows, messages_batch = future.result()
+
+                    results.extend(rows)
+
+                    messages.extend(messages_batch)
+
+            finally:
+
+                executor.shutdown(wait=True)
 
         except Exception as ex:
             
@@ -101,60 +129,62 @@ class CheckWorker(QObject):
     
     @Slot()
 
-    def _check_database(
+    def _check_batch(
         self,
         server: str,
-        database: str,
+        databases: list,
     ):
+
+        rows = []
+        messages = []
 
         try:
 
-            with mysql.connect(
-                server,
-                database,
-            ) as conn:
+            with mysql.connect(server) as conn:
 
-                settings = mysql.get_settings_conn(
+                batch_rows = mysql.scan_settings_batch(
                     conn,
-                    database,
+                    databases,
                 )
 
-                country = settings.get(
-                    config.filter.country_setting,
-                    "-",
+            for item in batch_rows:
+
+                rows.append(
+                    (
+                        server,
+                        item["database_name"],
+                        item["country"] or "-",
+                        item["target_value"] or "-",
+                        "OK",
+                        "",
+                    )
                 )
 
-                value = settings.get(
-                    config.filter.target_setting,
-                    "-",
-                )
+        except Exception as ex:
 
-                return (
+            for database in databases:
+
+                rows.append(
                     (
                         server,
                         database,
-                        country,
-                        value,
-                        "OK",
-                        "",
-                    ),
-                    None,
+                        "-",
+                        "-",
+                        "ERROR",
+                        str(ex),
+                    )
                 )
-        except Exception as ex:
 
-            return (
-                (
-                    server,
-                    database,
-                    "-",
-                    "-",
-                    "ERROR",
-                    str(ex),
-                ),
-                f"{server}/{database}: {ex}",
+            messages.append(
+                f"{server}/{databases[0]}: {ex}"
             )
-        
+
+        return rows, messages
+
+    @Slot()    
     def run(self):
+        
+        self._stop_requested = False
         
         self.started.emit()
 
@@ -175,21 +205,30 @@ class CheckWorker(QObject):
 
         total = len(self._servers)
 
-        with ThreadPoolExecutor(
+        completed = 0
+
+        executor = ThreadPoolExecutor(
             max_workers=config.parallel.workers
-        ) as executor:
+        )
 
-            futures = {
-                executor.submit(
-                    self._check_server,
-                    server,
-                ): server
-                for server in self._servers
-            }
+        futures = {
+            executor.submit(
+                self._check_server,
+                server,
+            ): server
+            for server in self._servers
+        }
 
-            completed = 0
+        try:
 
             for future in as_completed(futures):
+
+                if self._stop_requested:
+
+                    for pending in futures:
+                        pending.cancel()
+
+                    break
 
                 try:
                     rows, messages = future.result()
@@ -233,10 +272,22 @@ class CheckWorker(QObject):
                     completed,
                     total,
                 )
+
+        finally:
+
+            executor.shutdown(wait=True)
         
-        self.status.emit(
-            "Check finished."
-        )
+        if self._stop_requested:
+
+            self.status.emit(
+                "Check stopped."
+            )
+
+        else:
+
+            self.status.emit(
+                "Check finished."
+            )
         summary = stats.summary()
 
         self.status.emit("")

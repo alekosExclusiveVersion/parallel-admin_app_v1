@@ -95,6 +95,9 @@ class MainWindow(QWidget):
         self.action_check.triggered.connect(
             self._run_check
         )
+        self.action_stop.triggered.connect(
+            self._stop_check
+        )
         self.action_refresh.triggered.connect(
             self._refresh_servers
         )
@@ -159,6 +162,9 @@ class MainWindow(QWidget):
 
     def _run_check(self):
 
+        if self.thread.isRunning():
+            return
+
         self.clear_results()
 
         self.table.setSortingEnabled(False)
@@ -180,6 +186,23 @@ class MainWindow(QWidget):
 
         self.thread.start()
 
+    def _stop_check(self):
+
+        if not self.thread.isRunning():
+            return
+
+        self.worker.stop()
+
+        self.action_stop.setEnabled(False)
+
+        self.lbl_status_value.setText(
+            "Stopping..."
+        )
+
+        self.append_log(
+            "WARNING",
+            "Stop requested by user.",
+        )
 
     def _check_started(self):
 
@@ -429,7 +452,7 @@ class MainWindow(QWidget):
             "Country",
             "Value",
             "Status",
-            "Duration",
+            "Message",
         ])
 
         self.table.verticalHeader().setVisible(False)
@@ -614,7 +637,7 @@ class MainWindow(QWidget):
         country,
         value,
         status="OK",
-        duration="-",
+        message="",
     ):
 
         row = self.table.rowCount()
@@ -627,7 +650,7 @@ class MainWindow(QWidget):
             country,
             value,
             status,
-            duration,
+            message,
         ]
 
         for column, text in enumerate(values):
@@ -813,8 +836,11 @@ class MainWindow(QWidget):
     def closeEvent(self, event):
 
         if self.thread.isRunning():
+            self.worker.stop()
             self.thread.quit()
-            self.thread.wait()
+            if not self.thread.wait(5000):
+                self.thread.terminate()
+                self.thread.wait()
 
         event.accept()
     

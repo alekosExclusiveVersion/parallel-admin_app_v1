@@ -18,6 +18,7 @@ from pymysql.cursors import DictCursor
 from common.config import config
 from common.logger import logger
 from common.mysql_session import session
+from common.sql_builder import sql_builder
 
 
 class MySQLClient:
@@ -105,6 +106,24 @@ class MySQLClient:
                 and not re.search(pattern, db)
             )
         ]
+
+    def scan_settings_batch(
+        self,
+        conn,
+        databases,
+    ):
+
+        rows = []
+
+        for sql in sql_builder.build_scan_query(databases):
+            rows.extend(
+                self.execute_on_connection(
+                    conn,
+                    sql,
+                )
+            )
+
+        return rows
 
     def get_settings_conn(
         self,
