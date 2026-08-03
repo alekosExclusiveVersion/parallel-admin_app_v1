@@ -1,3 +1,4 @@
+import csv
 from PySide6.QtCore import QTimer
 import time
 from backend.repository import Repository
@@ -694,6 +695,10 @@ class MainWindow(QWidget):
 
         menu.addSeparator()
 
+        export_csv = menu.addAction("Export CSV...")
+
+        menu.addSeparator()
+
         clear_action = menu.addAction("Clear results")
 
         action = menu.exec(
@@ -718,6 +723,10 @@ class MainWindow(QWidget):
             QApplication.clipboard().setText(
                 self.table.item(row, 1).text()
             )
+
+        elif action == export_csv:
+
+            self._export_csv()
 
         elif action == clear_action:
 
@@ -780,10 +789,21 @@ class MainWindow(QWidget):
         )
 
         if not filename:
+            self.append_log(
+                "INFO",
+                "Log save cancelled."
+            )
             return
 
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write(self.log.toPlainText())
+        with open(
+            filename,
+            "w",
+            newline="",
+            encoding="utf-8-sig",
+            ) as f:
+                f.write(
+                    self.log.toPlainText()
+                )
 
         self.append_log(
             "SUCCESS",
@@ -852,3 +872,52 @@ class MainWindow(QWidget):
                 row,
                 not visible,
             )
+
+    def _export_csv(self):
+
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export CSV",
+            "results.csv",
+            "CSV files (*.csv);;All files (*)",
+        )
+
+        if not filename:
+            return
+
+        with open(
+            filename,
+            "w",
+            newline="",
+            encoding="utf-8-sig",
+        ) as f:
+            writer = csv.writer(f)
+            headers = []
+
+            for column in range(self.table.columnCount()):
+                headers.append(
+                    self.table.horizontalHeaderItem(column).text()
+                )
+
+            writer.writerow(headers)
+
+            for row in range(self.table.rowCount()):
+                if self.table.isRowHidden(row):
+                    continue
+
+                values = []
+
+                for column in range(self.table.columnCount()):
+
+                    item = self.table.item(row, column)
+
+                    values.append(
+                        item.text() if item else ""
+                    )
+
+                writer.writerow(values)
+
+        self.append_log(
+            "SUCCESS",
+            f"Results exported to {filename}",
+        )
