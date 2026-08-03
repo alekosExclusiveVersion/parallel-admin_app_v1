@@ -14,6 +14,10 @@ from PySide6.QtGui import (
     QAction,
     QColor,
     QBrush,
+    QFont,
+    QIcon,
+    QPainter,
+    QPixmap,
     QTextCursor,
 )
 
@@ -31,6 +35,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHeaderView,
     QToolBar,
+    QToolButton,
     QProgressBar,
     QLineEdit,
     QCheckBox,
@@ -55,7 +60,31 @@ class MainWindow(QWidget):
         self._create_backend()
 
         self._load_servers()
-        
+
+    # ----------------------------------------------------------
+    # Icons
+    # ----------------------------------------------------------
+
+    @staticmethod
+    def _glyph_icon(glyph: str, size: int = 20) -> QIcon:
+
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
+
+        painter = QPainter(pixmap)
+        font = QFont()
+        font.setPixelSize(14)
+        painter.setFont(font)
+        painter.setPen(QColor("#2d3436"))
+        painter.drawText(
+            pixmap.rect(),
+            Qt.AlignCenter,
+            glyph,
+        )
+        painter.end()
+
+        return QIcon(pixmap)
+
     # ----------------------------------------------------------
     # Backend
     # ----------------------------------------------------------
@@ -325,6 +354,25 @@ class MainWindow(QWidget):
             color:#9aa4af;
         }
 
+        QToolButton#btn_icon{
+            border:none;
+            border-radius:4px;
+            background:transparent;
+            padding:4px 6px;
+            font-size:14px;
+            color:#57606a;
+        }
+
+        QToolButton#btn_icon:hover{
+            background:#eef1f4;
+            color:#2d3436;
+        }
+
+        QToolButton#btn_icon:disabled{
+            background:transparent;
+            color:#c4cdd5;
+        }
+
         QPushButton{
             min-height:28px;
             border:1px solid #d0d7de;
@@ -522,11 +570,37 @@ class MainWindow(QWidget):
 
         self.toolbar = QToolBar()
 
-        self.action_refresh = QAction("Refresh", self)
-        self.action_check = QAction("Check", self)
-        self.action_update = QAction("Update", self)
-        self.action_verify = QAction("Verify", self)
-        self.action_stop = QAction("Stop", self)
+        self.action_refresh = QAction(
+            self._glyph_icon("\u27F3"),
+            "Refresh",
+            self,
+        )
+        self.action_check = QAction(
+            self._glyph_icon("\u25B6"),
+            "Check",
+            self,
+        )
+        self.action_update = QAction(
+            self._glyph_icon("\u270F"),
+            "Update",
+            self,
+        )
+        self.action_verify = QAction(
+            self._glyph_icon("\u2713"),
+            "Verify",
+            self,
+        )
+        self.action_stop = QAction(
+            self._glyph_icon("\u25A0"),
+            "Stop",
+            self,
+        )
+
+        self.action_refresh.setToolTip("Refresh servers")
+        self.action_check.setToolTip("Run check")
+        self.action_update.setToolTip("Update")
+        self.action_verify.setToolTip("Verify")
+        self.action_stop.setToolTip("Stop")
 
         self.action_update.setEnabled(False)
         self.action_verify.setEnabled(False)
@@ -590,9 +664,20 @@ class MainWindow(QWidget):
 
         buttons = QHBoxLayout()
 
-        self.btn_select_all = QPushButton("Select All")
-        self.btn_clear = QPushButton("Clear")
-        self.btn_invert = QPushButton("Invert")
+        self.btn_select_all = QToolButton()
+        self.btn_select_all.setObjectName("btn_icon")
+        self.btn_select_all.setText("\u2611")
+        self.btn_select_all.setToolTip("Select All")
+
+        self.btn_clear = QToolButton()
+        self.btn_clear.setObjectName("btn_icon")
+        self.btn_clear.setText("\u2715")
+        self.btn_clear.setToolTip("Clear selection")
+
+        self.btn_invert = QToolButton()
+        self.btn_invert.setObjectName("btn_icon")
+        self.btn_invert.setText("\u21C4")
+        self.btn_invert.setToolTip("Invert selection")
 
         buttons.addWidget(self.btn_select_all)
         buttons.addWidget(self.btn_clear)
@@ -753,9 +838,20 @@ class MainWindow(QWidget):
 
         top.addStretch()
 
-        self.btn_log_clear = QPushButton("Clear")
-        self.btn_log_copy = QPushButton("Copy")
-        self.btn_log_save = QPushButton("Save")
+        self.btn_log_clear = QToolButton()
+        self.btn_log_clear.setObjectName("btn_icon")
+        self.btn_log_clear.setText("\u2715")
+        self.btn_log_clear.setToolTip("Clear log")
+
+        self.btn_log_copy = QToolButton()
+        self.btn_log_copy.setObjectName("btn_icon")
+        self.btn_log_copy.setText("\u29C9")
+        self.btn_log_copy.setToolTip("Copy log")
+
+        self.btn_log_save = QToolButton()
+        self.btn_log_save.setObjectName("btn_icon")
+        self.btn_log_save.setText("\u2913")
+        self.btn_log_save.setToolTip("Save log")
 
         top.addWidget(self.btn_log_clear)
         top.addWidget(self.btn_log_copy)
@@ -786,7 +882,10 @@ class MainWindow(QWidget):
 
         qtop.addStretch()
 
-        self.btn_query_clear = QPushButton("Clear")
+        self.btn_query_clear = QToolButton()
+        self.btn_query_clear.setObjectName("btn_icon")
+        self.btn_query_clear.setText("\u2715")
+        self.btn_query_clear.setToolTip("Clear query log")
 
         qtop.addWidget(self.btn_query_clear)
 
