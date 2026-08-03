@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QLineEdit,
     QCheckBox,
+    QComboBox,
     QPushButton,
     QAbstractItemView,
     QApplication,
@@ -229,7 +230,11 @@ class MainWindow(QWidget):
 
         self.table.setSortingEnabled(True)
 
-        self.table.resizeColumnsToContents()
+        self.table.resizeColumnToContents(0)
+        self.table.resizeColumnToContents(1)
+        self.table.resizeColumnToContents(2)
+        self.table.resizeColumnToContents(4)
+        self.table.resizeColumnToContents(5)
 
         self.progress.setValue(100)
 
@@ -444,6 +449,28 @@ class MainWindow(QWidget):
             self.chk_only_errors
         )
 
+        filter_layout.addWidget(QLabel("Value:"))
+
+        self.combo_value = QComboBox()
+        self.combo_value.addItems([
+            "All",
+            "Empty",
+            "Not empty",
+        ])
+
+        filter_layout.addWidget(self.combo_value)
+
+        filter_layout.addWidget(QLabel("Message:"))
+
+        self.combo_message = QComboBox()
+        self.combo_message.addItems([
+            "All",
+            "Empty",
+            "Not empty",
+        ])
+
+        filter_layout.addWidget(self.combo_message)
+
         table_layout.addLayout(filter_layout)
 
         self.table = QTableWidget()
@@ -461,11 +488,17 @@ class MainWindow(QWidget):
 
         self.table.verticalHeader().setVisible(False)
 
+        self.table.verticalHeader().setSectionResizeMode(
+            QHeaderView.ResizeToContents
+        )
+
         header = self.table.horizontalHeader()
 
         header.setStretchLastSection(False)
 
         header.setSectionResizeMode(QHeaderView.Interactive)
+
+        header.resizeSection(3, 180)
 
         self.table.setAlternatingRowColors(True)
 
@@ -485,7 +518,7 @@ class MainWindow(QWidget):
 
         self.table.setShowGrid(False)
 
-        self.table.setWordWrap(False)
+        self.table.setWordWrap(True)
 
         self.table.setCornerButtonEnabled(False)
 
@@ -603,6 +636,14 @@ class MainWindow(QWidget):
         self.chk_only_errors.toggled.connect(
             self._filter_results
         )
+
+        self.combo_value.currentTextChanged.connect(
+            self._filter_results
+        )
+
+        self.combo_message.currentTextChanged.connect(
+            self._filter_results
+        )
     # --------------------------------------------------------------
     # Slots
     # --------------------------------------------------------------
@@ -658,6 +699,8 @@ class MainWindow(QWidget):
         for column, text in enumerate(values):
 
             item = QTableWidgetItem(str(text))
+
+            item.setToolTip(str(text))
 
             item.setFlags(
                 item.flags() & ~Qt.ItemIsEditable
@@ -875,15 +918,26 @@ class MainWindow(QWidget):
 
         only_errors = self.chk_only_errors.isChecked()
 
+        value_filter = self.combo_value.currentText()
+
+        message_filter = self.combo_message.currentText()
+
+        def _is_empty(text):
+            return text.strip() in ("", "-")
+
         for row in range(self.table.rowCount()):
 
             server = self.table.item(row, 0)
             database = self.table.item(row, 1)
             status = self.table.item(row, 4)
+            value = self.table.item(row, 3)
+            message = self.table.item(row, 5)
 
             server_text = server.text().lower() if server else ""
             database_text = database.text().lower() if database else ""
             status_text = status.text() if status else ""
+            value_text = value.text() if value else ""
+            message_text = message.text() if message else ""
 
             visible = True
 
@@ -900,6 +954,24 @@ class MainWindow(QWidget):
 
                 visible = (
                     status_text == "ERROR"
+                )
+
+            # Фильтр по колонке Value
+            if visible and value_filter != "All":
+
+                visible = (
+                    _is_empty(value_text)
+                    if value_filter == "Empty"
+                    else not _is_empty(value_text)
+                )
+
+            # Фильтр по колонке Message
+            if visible and message_filter != "All":
+
+                visible = (
+                    _is_empty(message_text)
+                    if message_filter == "Empty"
+                    else not _is_empty(message_text)
                 )
 
             self.table.setRowHidden(
