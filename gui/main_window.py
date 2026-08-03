@@ -8,6 +8,7 @@ from common.sql_builder import sql_builder
 from common.version import APP_VERSION
 from PySide6.QtCore import (
     Qt,
+    QSize,
     QThread,
 )
 from PySide6.QtGui import (
@@ -46,8 +47,20 @@ from PySide6.QtWidgets import (
     QMenu,
     QSplitter,
     QPlainTextEdit,
+    QStyledItemDelegate,
     QTabWidget,
 )
+
+
+class ComboItemDelegate(QStyledItemDelegate):
+    """Отступы внутри пунктов выпадающего списка."""
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        return QSize(
+            size.width() + 24,
+            max(size.height() + 12, 34),
+        )
 
 
 class MainWindow(QWidget):
@@ -329,6 +342,29 @@ class MainWindow(QWidget):
             border:1px solid #1976d2;
         }
 
+        QComboBox{
+            padding:4px 28px 4px 10px;
+        }
+
+        QComboBox QAbstractItemView{
+            background:white;
+            border:1px solid #dfe6e9;
+            border-radius:4px;
+            outline:none;
+            padding:6px;
+            selection-background-color:#e3f2fd;
+            selection-color:#2d3436;
+        }
+
+        QComboBox QAbstractItemView::item{
+            border:none;
+            border-radius:4px;
+        }
+
+        QComboBox QAbstractItemView::item:hover{
+            background:#eef1f4;
+        }
+
         QToolBar{
             background:white;
             border:1px solid #dfe6e9;
@@ -434,27 +470,6 @@ class MainWindow(QWidget):
             background:white;
             border:none;
             border-radius:0;
-        }
-
-        QComboBox QAbstractItemView{
-            background:white;
-            border:1px solid #dfe6e9;
-            border-radius:4px;
-            outline:none;
-            padding:4px;
-            selection-background-color:#e3f2fd;
-            selection-color:#2d3436;
-        }
-
-        QComboBox QAbstractItemView::item{
-            min-height:24px;
-            padding:2px 8px;
-            border:none;
-            border-radius:4px;
-        }
-
-        QComboBox QAbstractItemView::item:hover{
-            background:#eef1f4;
         }
 
         QHeaderView::section{
@@ -765,6 +780,9 @@ class MainWindow(QWidget):
             "Empty",
             "Not empty",
         ])
+        self.combo_value.view().setItemDelegate(
+            ComboItemDelegate(self.combo_value.view())
+        )
 
         filter_layout.addWidget(self.combo_value)
 
@@ -776,6 +794,9 @@ class MainWindow(QWidget):
             "Empty",
             "Not empty",
         ])
+        self.combo_message.view().setItemDelegate(
+            ComboItemDelegate(self.combo_message.view())
+        )
 
         filter_layout.addWidget(self.combo_message)
 
