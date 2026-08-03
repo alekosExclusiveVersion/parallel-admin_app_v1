@@ -398,6 +398,26 @@ class MainWindow(QWidget):
             background:transparent;
         }
 
+        QFrame#StatusBar{
+            background:#24292e;
+            border:1px solid #24292e;
+            border-radius:8px;
+        }
+
+        QFrame#StatusBar QProgressBar{
+            background:rgba(255,255,255,0.14);
+            border:none;
+            border-radius:4px;
+            min-height:8px;
+            max-height:8px;
+            text-align:center;
+        }
+
+        QFrame#StatusBar QProgressBar::chunk{
+            background:#1976d2;
+            border-radius:4px;
+        }
+
         QFrame{
             background:white;
             border:1px solid #dfe6e9;
@@ -743,9 +763,12 @@ class MainWindow(QWidget):
 
         root.addWidget(self.toolbar)
 
-        progress_frame = QFrame()
+        status_bar = QFrame()
+        status_bar.setObjectName("StatusBar")
 
-        progress_layout = QGridLayout(progress_frame)
+        status_layout = QHBoxLayout(status_bar)
+        status_layout.setContentsMargins(12, 4, 12, 4)
+        status_layout.setSpacing(6)
 
         self.lbl_status = QLabel("Status:")
         self.lbl_status_value = QLabel("Ready")
@@ -756,23 +779,58 @@ class MainWindow(QWidget):
         self.lbl_elapsed = QLabel("Elapsed:")
         self.lbl_elapsed_value = QLabel("00:00:00")
 
-        progress_layout.addWidget(self.lbl_status, 0, 0)
-        progress_layout.addWidget(self.lbl_status_value, 0, 1)
+        self.lbl_sql = QLabel("SQL Console:")
+        self.lbl_sql_status = QLabel("Ready")
 
-        progress_layout.addWidget(self.lbl_servers, 0, 2)
-        progress_layout.addWidget(self.lbl_servers_value, 0, 3)
+        for label in (
+            self.lbl_status,
+            self.lbl_servers,
+            self.lbl_elapsed,
+            self.lbl_sql,
+        ):
+            label.setStyleSheet(
+                "color:#8b949e;font-size:12px;border:none;"
+                "background:transparent;"
+            )
 
-        progress_layout.addWidget(self.lbl_elapsed, 0, 4)
-        progress_layout.addWidget(self.lbl_elapsed_value, 0, 5)
+        for label in (
+            self.lbl_status_value,
+            self.lbl_servers_value,
+            self.lbl_elapsed_value,
+            self.lbl_sql_status,
+        ):
+            label.setStyleSheet(
+                "color:#ffffff;font-size:12px;font-weight:600;"
+                "border:none;background:transparent;"
+            )
+
+        status_layout.addWidget(self.lbl_status)
+        status_layout.addWidget(self.lbl_status_value)
+
+        status_layout.addSpacing(12)
+
+        status_layout.addWidget(self.lbl_servers)
+        status_layout.addWidget(self.lbl_servers_value)
+
+        status_layout.addSpacing(12)
+
+        status_layout.addWidget(self.lbl_elapsed)
+        status_layout.addWidget(self.lbl_elapsed_value)
+
+        status_layout.addSpacing(12)
+
+        status_layout.addWidget(self.lbl_sql)
+        status_layout.addWidget(self.lbl_sql_status)
+
+        status_layout.addStretch()
 
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
-        self.lbl_elapsed_value.setText("00:00:00")
+        self.progress.setFixedWidth(160)
+        self.progress.setTextVisible(False)
 
-        progress_layout.addWidget(self.progress, 1, 0, 1, 6)
-
-        root.addWidget(progress_frame)
+        status_layout.addWidget(self.progress)
 
         body_splitter = QSplitter(Qt.Horizontal)
         body_splitter.setChildrenCollapsible(False)
@@ -951,7 +1009,49 @@ class MainWindow(QWidget):
             self._table_double_click
         )
 
-        table_layout.addWidget(self.table)
+        results_splitter = QSplitter(Qt.Vertical)
+        results_splitter.setChildrenCollapsible(False)
+
+        results_splitter.addWidget(self.table)
+
+        sql_section = QWidget()
+        sql_section_layout = QVBoxLayout(sql_section)
+        sql_section_layout.setContentsMargins(0, 0, 0, 0)
+        sql_section_layout.setSpacing(8)
+
+        lbl_sql_results = QLabel("SQL results")
+        lbl_sql_results.setObjectName("SectionTitle")
+        sql_section_layout.addWidget(lbl_sql_results)
+
+        self.sql_table = QTableWidget()
+
+        self.sql_table.verticalHeader().setVisible(False)
+
+        self.sql_table.setAlternatingRowColors(True)
+
+        self.sql_table.setSelectionBehavior(
+            QTableWidget.SelectRows
+        )
+
+        self.sql_table.setSelectionMode(
+            QTableWidget.SingleSelection
+        )
+
+        self.sql_table.setEditTriggers(
+            QTableWidget.NoEditTriggers
+        )
+
+        self.sql_table.setShowGrid(False)
+
+        self.sql_table.setWordWrap(True)
+
+        sql_section_layout.addWidget(self.sql_table)
+
+        results_splitter.addWidget(sql_section)
+
+        results_splitter.setSizes([300, 200])
+
+        table_layout.addWidget(results_splitter)
 
         # ----------------------------------------------------------
         # Log Panel UI
@@ -1143,9 +1243,6 @@ class MainWindow(QWidget):
 
         sql_console_layout.addLayout(scontrols)
 
-        sql_editor_splitter = QSplitter(Qt.Vertical)
-        sql_editor_splitter.setChildrenCollapsible(False)
-
         self.sql_editor = QPlainTextEdit()
         self.sql_editor.setLineWrapMode(
             QPlainTextEdit.NoWrap
@@ -1161,59 +1258,17 @@ class MainWindow(QWidget):
         console_font.setPointSize(12)
         self.sql_editor.setFont(console_font)
 
-        sql_editor_splitter.addWidget(self.sql_editor)
-
-        sql_results_widget = QWidget()
-        sql_results_layout = QVBoxLayout(sql_results_widget)
-        sql_results_layout.setContentsMargins(0, 0, 0, 0)
-        sql_results_layout.setSpacing(4)
-
-        self.lbl_sql_status = QLabel("Ready")
-        self.lbl_sql_status.setStyleSheet(
-            "color:#7f8c8d;font-size:12px;"
-        )
-
-        sql_results_layout.addWidget(self.lbl_sql_status)
-
-        self.sql_table = QTableWidget()
-
-        self.sql_table.verticalHeader().setVisible(False)
-
-        self.sql_table.setAlternatingRowColors(True)
-
-        self.sql_table.setSelectionBehavior(
-            QTableWidget.SelectRows
-        )
-
-        self.sql_table.setSelectionMode(
-            QTableWidget.SingleSelection
-        )
-
-        self.sql_table.setEditTriggers(
-            QTableWidget.NoEditTriggers
-        )
-
-        self.sql_table.setShowGrid(False)
-
-        self.sql_table.setWordWrap(True)
-
-        sql_results_layout.addWidget(self.sql_table)
-
-        sql_editor_splitter.addWidget(sql_results_widget)
-
-        sql_editor_splitter.setSizes([160, 160])
-
-        sql_console_layout.addWidget(sql_editor_splitter)
+        sql_console_layout.addWidget(self.sql_editor)
 
         tabs = QTabWidget()
+        tabs.addTab(table_frame, "Results")
         tabs.addTab(log_frame, "Log")
         tabs.addTab(queries_frame, "Queries")
 
         right_splitter = QSplitter(Qt.Vertical)
         right_splitter.addWidget(sql_console_frame)
-        right_splitter.addWidget(table_frame)
         right_splitter.addWidget(tabs)
-        right_splitter.setSizes([200, 350, 200])
+        right_splitter.setSizes([200, 600])
         right_splitter.setChildrenCollapsible(False)
         right.addWidget(right_splitter)
 
@@ -1299,6 +1354,8 @@ class MainWindow(QWidget):
         body_splitter.setSizes([300, 900])
 
         root.addWidget(body_splitter)
+
+        root.addWidget(status_bar)
 
         self._started_at = None
 
