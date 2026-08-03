@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
-from common.config import config
 from common.mysql_client import mysql
 from common.mysql_session import session
 from backend.repository import Repository
@@ -97,7 +96,6 @@ class LoginDialog(QDialog):
         form = QFormLayout()
 
         self.user = QLineEdit()
-        self.user.setText(config.mysql.user)
 
         self.password = QLineEdit()
         self.password.setEchoMode(
