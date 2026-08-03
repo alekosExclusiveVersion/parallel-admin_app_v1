@@ -313,6 +313,7 @@ class MainWindow(QWidget):
             border-radius:4px;
             background:white;
             text-align:center;
+            padding:0 12px;
         }
 
         QPushButton:hover{
