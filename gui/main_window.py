@@ -414,6 +414,7 @@ class MainWindow(QWidget):
 
         QCheckBox{
             font-size:13px;
+            margin:0 8px;
         }
 
         QCheckBox::indicator{
@@ -427,6 +428,33 @@ class MainWindow(QWidget):
         QCheckBox::indicator:checked{
             background:#1976d2;
             border-color:#1976d2;
+        }
+
+        QComboBox QFrame{
+            background:white;
+            border:none;
+            border-radius:0;
+        }
+
+        QComboBox QAbstractItemView{
+            background:white;
+            border:1px solid #dfe6e9;
+            border-radius:4px;
+            outline:none;
+            padding:4px;
+            selection-background-color:#e3f2fd;
+            selection-color:#2d3436;
+        }
+
+        QComboBox QAbstractItemView::item{
+            min-height:24px;
+            padding:2px 8px;
+            border:none;
+            border-radius:4px;
+        }
+
+        QComboBox QAbstractItemView::item:hover{
+            background:#eef1f4;
         }
 
         QHeaderView::section{
