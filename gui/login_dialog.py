@@ -30,11 +30,66 @@ class LoginDialog(QDialog):
 
     def _build_ui(self):
 
+        self.setStyleSheet("""
+        QDialog{
+            background:#f3f5f7;
+        }
+
+        QLabel#DialogTitle{
+            font-size:15px;
+            font-weight:700;
+            color:#2d3436;
+        }
+
+        QLineEdit{
+            background:white;
+            border:1px solid #dfe6e9;
+            border-radius:4px;
+            font-size:13px;
+            padding:4px;
+        }
+
+        QLineEdit:focus{
+            border:1px solid #1976d2;
+        }
+
+        QPushButton{
+            min-height:28px;
+            border:1px solid #d0d7de;
+            border-radius:4px;
+            background:white;
+            padding:0 12px;
+        }
+
+        QPushButton:hover{
+            background:#f5f5f5;
+        }
+
+        QPushButton#btn_primary{
+            background:#1976d2;
+            border:1px solid #1976d2;
+            color:white;
+            font-weight:600;
+        }
+
+        QPushButton#btn_primary:hover{
+            background:#1565c0;
+            border-color:#1565c0;
+        }
+
+        QPushButton#btn_primary:disabled{
+            background:#90caf9;
+            border-color:#90caf9;
+            color:white;
+        }
+        """)
+
         layout = QVBoxLayout(self)
 
         title = QLabel(
             "Enter MySQL credentials"
         )
+        title.setObjectName("DialogTitle")
 
         layout.addWidget(title)
 
@@ -66,6 +121,7 @@ class LoginDialog(QDialog):
         self.btn_connect = QPushButton(
             "Connect"
         )
+        self.btn_connect.setObjectName("btn_primary")
 
         self.btn_connect.clicked.connect(
             self._accept

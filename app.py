@@ -1,6 +1,6 @@
 import sys
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QStyle
 
 from gui.application import App
 from gui.login_dialog import LoginDialog
@@ -9,6 +9,12 @@ from gui.login_dialog import LoginDialog
 def main():
 
     qt_app = QApplication(sys.argv)
+
+    qt_app.setWindowIcon(
+        qt_app.style().standardIcon(
+            QStyle.SP_ComputerIcon
+        )
+    )
 
     login = LoginDialog()
 

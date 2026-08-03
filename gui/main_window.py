@@ -5,6 +5,7 @@ import time
 from backend.repository import Repository
 from backend.check_worker import CheckWorker
 from common.sql_builder import sql_builder
+from common.version import APP_VERSION
 from PySide6.QtCore import (
     Qt,
     QThread,
@@ -279,13 +280,24 @@ class MainWindow(QWidget):
 
         QListWidget,
         QTextEdit,
+        QPlainTextEdit,
         QTableWidget,
-        QLineEdit{
+        QLineEdit,
+        QComboBox,
+        QAbstractSpinBox{
             background:white;
             border:1px solid #dfe6e9;
             border-radius:4px;
             font-size:13px;
             padding:4px;
+        }
+
+        QListWidget:focus,
+        QTextEdit:focus,
+        QPlainTextEdit:focus,
+        QLineEdit:focus,
+        QComboBox:focus{
+            border:1px solid #1976d2;
         }
 
         QToolBar{
@@ -307,6 +319,12 @@ class MainWindow(QWidget):
             background:#f5f5f5;
         }
 
+        QToolButton:disabled{
+            background:#e9ecef;
+            border-color:#dfe6e9;
+            color:#9aa4af;
+        }
+
         QPushButton{
             min-height:28px;
             border:1px solid #d0d7de;
@@ -320,6 +338,97 @@ class MainWindow(QWidget):
             background:#f5f5f5;
         }
 
+        QPushButton:disabled{
+            background:#e9ecef;
+            border-color:#dfe6e9;
+            color:#9aa4af;
+        }
+
+        QPushButton:focus{
+            border:1px solid #1976d2;
+        }
+
+        QPushButton#btn_primary{
+            background:#1976d2;
+            border:1px solid #1976d2;
+            color:white;
+            font-weight:600;
+        }
+
+        QPushButton#btn_primary:hover{
+            background:#1565c0;
+            border-color:#1565c0;
+        }
+
+        QPushButton#btn_primary:pressed{
+            background:#0d47a1;
+        }
+
+        QCheckBox{
+            font-size:13px;
+        }
+
+        QCheckBox::indicator{
+            width:16px;
+            height:16px;
+            border:1px solid #c4cdd5;
+            border-radius:4px;
+            background:white;
+        }
+
+        QCheckBox::indicator:checked{
+            background:#1976d2;
+            border-color:#1976d2;
+        }
+
+        QHeaderView::section{
+            background:#f8f9fa;
+            border:none;
+            border-bottom:2px solid #dfe6e9;
+            border-right:1px solid #eef1f4;
+            padding:6px 8px;
+            font-size:12px;
+            font-weight:600;
+            color:#57606a;
+        }
+
+        QHeaderView::section:hover{
+            background:#eef1f4;
+        }
+
+        QTabWidget::pane{
+            border:1px solid #dfe6e9;
+            border-radius:8px;
+            background:white;
+            top:-1px;
+        }
+
+        QTabBar::tab{
+            background:transparent;
+            padding:6px 16px;
+            color:#57606a;
+            border-bottom:2px solid transparent;
+            font-size:13px;
+        }
+
+        QTabBar::tab:first{
+            margin-left:4px;
+        }
+
+        QTabBar::tab:top{
+            margin-top:4px;
+        }
+
+        QTabBar::tab:selected{
+            color:#1976d2;
+            border-bottom:2px solid #1976d2;
+            font-weight:600;
+        }
+
+        QTabBar::tab:hover:!selected{
+            color:#2d3436;
+        }
+
         QProgressBar{
             border:1px solid #dfe6e9;
             border-radius:5px;
@@ -331,6 +440,79 @@ class MainWindow(QWidget):
         QProgressBar::chunk{
             background:#1976d2;
             border-radius:4px;
+        }
+
+        QMenu{
+            background:white;
+            border:1px solid #dfe6e9;
+            border-radius:6px;
+            padding:6px;
+        }
+
+        QMenu::item{
+            padding:6px 24px;
+            border-radius:4px;
+            color:#2d3436;
+        }
+
+        QMenu::item:selected{
+            background:#e3f2fd;
+            color:#1565c0;
+        }
+
+        QMenu::separator{
+            height:1px;
+            background:#eef1f4;
+            margin:4px 8px;
+        }
+
+        QScrollBar:vertical{
+            background:transparent;
+            width:10px;
+            margin:2px;
+        }
+
+        QScrollBar::handle:vertical{
+            background:#c4cdd5;
+            border-radius:4px;
+            min-height:30px;
+        }
+
+        QScrollBar::handle:vertical:hover{
+            background:#a5b0ba;
+        }
+
+        QScrollBar::add-line:vertical,
+        QScrollBar::sub-line:vertical{
+            height:0;
+        }
+
+        QScrollBar:horizontal{
+            background:transparent;
+            height:10px;
+            margin:2px;
+        }
+
+        QScrollBar::handle:horizontal{
+            background:#c4cdd5;
+            border-radius:4px;
+            min-width:30px;
+        }
+
+        QScrollBar::handle:horizontal:hover{
+            background:#a5b0ba;
+        }
+
+        QScrollBar::add-line:horizontal,
+        QScrollBar::sub-line:horizontal{
+            width:0;
+        }
+
+        QScrollBar::add-page:vertical,
+        QScrollBar::sub-page:vertical,
+        QScrollBar::add-page:horizontal,
+        QScrollBar::sub-page:horizontal{
+            background:transparent;
         }
         """)
 
@@ -645,6 +827,7 @@ class MainWindow(QWidget):
 
         self.btn_apply = QPushButton("Apply")
         self.btn_rerun = QPushButton("Run check")
+        self.btn_rerun.setObjectName("btn_primary")
 
         qbuttons.addWidget(self.btn_apply)
         qbuttons.addWidget(self.btn_rerun)
@@ -662,7 +845,10 @@ class MainWindow(QWidget):
         right_splitter.setChildrenCollapsible(False)
         right.addWidget(right_splitter)
 
-        self.append_log("INFO", "Parallel Admin started.")
+        self.append_log(
+            "INFO",
+            f"Parallel Admin v{APP_VERSION} started."
+        )
         self.append_log("SUCCESS", "GUI initialized.")
         self.append_log("INFO", "Ready.")
 
