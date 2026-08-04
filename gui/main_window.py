@@ -443,6 +443,12 @@ class MainWindow(QWidget):
             border-radius:10px;
         }
 
+        QSplitter{
+            background:transparent;
+            border:none;
+            border-radius:0;
+        }
+
         QSplitter::handle{
             background:transparent;
         }
@@ -671,10 +677,20 @@ class MainWindow(QWidget):
 
         /* --- Tabs --- */
         QTabWidget::pane{
-            border:1px solid #e3e8ef;
-            border-radius:10px;
+            border:none;
+            border-radius:0;
             background:white;
-            top:-1px;
+        }
+
+        QStackedWidget{
+            border:none;
+            border-radius:0;
+            background:white;
+        }
+
+        QFrame#TabPage{
+            border:none;
+            border-radius:0;
         }
 
         QTabBar::tab{
@@ -977,6 +993,7 @@ class MainWindow(QWidget):
         right.setSpacing(0)
 
         table_frame = QFrame()
+        table_frame.setObjectName("TabPage")
 
         table_layout = QVBoxLayout(table_frame)
         table_layout.setContentsMargins(8, 8, 8, 8)
@@ -1109,6 +1126,7 @@ class MainWindow(QWidget):
         # ----------------------------------------------------------
 
         log_frame = QFrame()
+        log_frame.setObjectName("TabPage")
 
         log_layout = QVBoxLayout(log_frame)
         log_layout.setContentsMargins(8, 8, 8, 8)
@@ -1153,6 +1171,7 @@ class MainWindow(QWidget):
         # ----------------------------------------------------------
 
         queries_frame = QFrame()
+        queries_frame.setObjectName("TabPage")
 
         queries_layout = QVBoxLayout(queries_frame)
         queries_layout.setContentsMargins(8, 8, 8, 8)
@@ -1344,9 +1363,16 @@ class MainWindow(QWidget):
         tabs.addTab(log_frame, "Log")
         tabs.addTab(queries_frame, "Queries")
 
+        tabs_frame = QFrame()
+        tabs_frame.setObjectName("TabsBlock")
+        tabs_frame_layout = QVBoxLayout(tabs_frame)
+        tabs_frame_layout.setContentsMargins(0, 0, 0, 0)
+        tabs_frame_layout.setSpacing(0)
+        tabs_frame_layout.addWidget(tabs)
+
         right_splitter = QSplitter(Qt.Vertical)
         right_splitter.addWidget(sql_console_frame)
-        right_splitter.addWidget(tabs)
+        right_splitter.addWidget(tabs_frame)
         right_splitter.setSizes([200, 600])
         right_splitter.setChildrenCollapsible(False)
         right_splitter.setHandleWidth(1)
