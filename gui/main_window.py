@@ -1642,6 +1642,7 @@ class MainWindow(QWidget):
     def clear_results(self):
 
         self.table.clear()
+        self.table.setRowCount(0)
         self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels([
             "Source",
