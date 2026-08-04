@@ -327,6 +327,10 @@ class MainWindow(QWidget):
 
         self.clear_results()
 
+        self._results_source = "check"
+
+        self._update_only_errors_visibility()
+
         self.table.setSortingEnabled(False)
 
         self.progress.setValue(0)
@@ -1460,6 +1464,10 @@ class MainWindow(QWidget):
             self._filter_results
         )
 
+        self._results_source = None
+
+        self._update_only_errors_visibility()
+
         self.result_search.textChanged.connect(
             self._filter_results
         )
@@ -1616,8 +1624,20 @@ class MainWindow(QWidget):
         for index, width in fixed_widths.items():
             header.resizeSection(index, width)
 
+        self._results_source = None
+
         self._repopulate_filter_column()
         self._filter_results()
+        self._update_only_errors_visibility()
+
+    def _update_only_errors_visibility(self):
+
+        visible = self._results_source == "check"
+
+        self.chk_only_errors.setVisible(visible)
+
+        if not visible and self.chk_only_errors.isChecked():
+            self.chk_only_errors.setChecked(False)
 
     def _show_table_menu(self, pos):
 
@@ -1792,6 +1812,10 @@ class MainWindow(QWidget):
         self.table.setColumnCount(0)
         self.table.setRowCount(0)
         self.table.setSortingEnabled(False)
+
+        self._results_source = "sql"
+
+        self._update_only_errors_visibility()
 
         self.lbl_sql_status.setText(
             f"Running on {len(targets)} target(s)..."
