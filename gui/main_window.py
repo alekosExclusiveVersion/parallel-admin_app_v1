@@ -443,6 +443,10 @@ class MainWindow(QWidget):
             border-radius:10px;
         }
 
+        QSplitter::handle{
+            background:transparent;
+        }
+
         /* --- Status bar (full-bleed) --- */
         QFrame#StatusBar{
             background:#0f172a;
@@ -918,6 +922,7 @@ class MainWindow(QWidget):
 
         body_splitter = QSplitter(Qt.Horizontal)
         body_splitter.setChildrenCollapsible(False)
+        body_splitter.setHandleWidth(1)
 
         server_frame = QFrame()
         server_frame.setMinimumWidth(200)
@@ -1344,6 +1349,7 @@ class MainWindow(QWidget):
         right_splitter.addWidget(tabs)
         right_splitter.setSizes([200, 600])
         right_splitter.setChildrenCollapsible(False)
+        right_splitter.setHandleWidth(1)
         right.addWidget(right_splitter)
 
         self.append_log(
