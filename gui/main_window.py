@@ -390,8 +390,14 @@ class MainWindow(QWidget):
         self.table.resizeColumnToContents(0)
         self.table.resizeColumnToContents(1)
         self.table.resizeColumnToContents(2)
+        self.table.resizeColumnToContents(3)
         self.table.resizeColumnToContents(4)
         self.table.resizeColumnToContents(5)
+        self.table.resizeColumnToContents(6)
+
+        self._repopulate_filter_column()
+
+        self._filter_results()
 
         self.progress.setValue(100)
 
@@ -973,11 +979,19 @@ class MainWindow(QWidget):
 
         filter_layout = QHBoxLayout()
 
-        filter_layout.addWidget(QLabel("Search:"))
+        filter_layout.addWidget(QLabel("Column:"))
+
+        self.combo_filter_column = QComboBox()
+        self.combo_filter_column.setMinimumWidth(120)
+        self.combo_filter_column.view().setItemDelegate(
+            ComboItemDelegate(self.combo_filter_column.view())
+        )
+
+        filter_layout.addWidget(self.combo_filter_column)
 
         self.result_search = QLineEdit()
         self.result_search.setPlaceholderText(
-            "Server or database..."
+            "Filter by selected column..."
         )
 
         filter_layout.addWidget(
@@ -985,49 +999,38 @@ class MainWindow(QWidget):
             1,
         )
 
+        self.combo_filter_mode = QComboBox()
+        self.combo_filter_mode.addItems([
+            "Contains",
+            "Equals",
+            "Empty",
+            "Not empty",
+        ])
+        self.combo_filter_mode.view().setItemDelegate(
+            ComboItemDelegate(self.combo_filter_mode.view())
+        )
+
+        filter_layout.addWidget(self.combo_filter_mode)
+
         self.chk_only_errors = QCheckBox(
             "Only Errors"
         )
 
-        filter_layout.addWidget(
-            self.chk_only_errors
-        )
+        filter_layout.addWidget(self.chk_only_errors)
 
-        filter_layout.addWidget(QLabel("Value:"))
+        self.btn_filter_clear = QPushButton("Clear")
+        self.btn_filter_clear.setToolTip("Reset filters")
 
-        self.combo_value = QComboBox()
-        self.combo_value.addItems([
-            "All",
-            "Empty",
-            "Not empty",
-        ])
-        self.combo_value.view().setItemDelegate(
-            ComboItemDelegate(self.combo_value.view())
-        )
-
-        filter_layout.addWidget(self.combo_value)
-
-        filter_layout.addWidget(QLabel("Message:"))
-
-        self.combo_message = QComboBox()
-        self.combo_message.addItems([
-            "All",
-            "Empty",
-            "Not empty",
-        ])
-        self.combo_message.view().setItemDelegate(
-            ComboItemDelegate(self.combo_message.view())
-        )
-
-        filter_layout.addWidget(self.combo_message)
+        filter_layout.addWidget(self.btn_filter_clear)
 
         table_layout.addLayout(filter_layout)
 
         self.table = QTableWidget()
 
-        self.table.setColumnCount(6)
+        self.table.setColumnCount(7)
 
         self.table.setHorizontalHeaderLabels([
+            "Source",
             "Server",
             "Database",
             "Country",
@@ -1048,7 +1051,7 @@ class MainWindow(QWidget):
 
         header.setSectionResizeMode(QHeaderView.Interactive)
 
-        header.resizeSection(3, 180)
+        header.resizeSection(4, 180)
 
         self.table.setAlternatingRowColors(True)
 
@@ -1088,49 +1091,7 @@ class MainWindow(QWidget):
             self._table_double_click
         )
 
-        results_splitter = QSplitter(Qt.Vertical)
-        results_splitter.setChildrenCollapsible(False)
-
-        results_splitter.addWidget(self.table)
-
-        sql_section = QWidget()
-        sql_section_layout = QVBoxLayout(sql_section)
-        sql_section_layout.setContentsMargins(0, 0, 0, 0)
-        sql_section_layout.setSpacing(8)
-
-        lbl_sql_results = QLabel("SQL results")
-        lbl_sql_results.setObjectName("SectionTitle")
-        sql_section_layout.addWidget(lbl_sql_results)
-
-        self.sql_table = QTableWidget()
-
-        self.sql_table.verticalHeader().setVisible(False)
-
-        self.sql_table.setAlternatingRowColors(True)
-
-        self.sql_table.setSelectionBehavior(
-            QTableWidget.SelectRows
-        )
-
-        self.sql_table.setSelectionMode(
-            QTableWidget.SingleSelection
-        )
-
-        self.sql_table.setEditTriggers(
-            QTableWidget.NoEditTriggers
-        )
-
-        self.sql_table.setShowGrid(False)
-
-        self.sql_table.setWordWrap(True)
-
-        sql_section_layout.addWidget(self.sql_table)
-
-        results_splitter.addWidget(sql_section)
-
-        results_splitter.setSizes([300, 200])
-
-        table_layout.addWidget(results_splitter)
+        table_layout.addWidget(self.table)
 
         # ----------------------------------------------------------
         # Log Panel UI
@@ -1498,13 +1459,19 @@ class MainWindow(QWidget):
             self._filter_results
         )
 
-        self.combo_value.currentTextChanged.connect(
+        self.combo_filter_column.currentTextChanged.connect(
             self._filter_results
         )
 
-        self.combo_message.currentTextChanged.connect(
+        self.combo_filter_mode.currentTextChanged.connect(
             self._filter_results
         )
+
+        self.btn_filter_clear.clicked.connect(
+            self._clear_filters
+        )
+
+        self._repopulate_filter_column()
     # --------------------------------------------------------------
     # Slots
     # --------------------------------------------------------------
@@ -1549,6 +1516,7 @@ class MainWindow(QWidget):
         self.table.insertRow(row)
 
         values = [
+            "Check",
             server,
             database,
             country,
@@ -1567,7 +1535,7 @@ class MainWindow(QWidget):
                 item.flags() & ~Qt.ItemIsEditable
             )
 
-            if column == 4:
+            if column == 5:
 
                 if status == "OK":
                     item.setForeground(
@@ -1610,7 +1578,21 @@ class MainWindow(QWidget):
         self._filter_results()
 
     def clear_results(self):
-        self.table.setRowCount(0)
+
+        self.table.clear()
+        self.table.setColumnCount(7)
+        self.table.setHorizontalHeaderLabels([
+            "Source",
+            "Server",
+            "Database",
+            "Country",
+            "Value",
+            "Status",
+            "Message",
+        ])
+
+        self._repopulate_filter_column()
+        self._filter_results()
 
     def _show_table_menu(self, pos):
 
@@ -1643,15 +1625,27 @@ class MainWindow(QWidget):
 
         elif action == copy_server:
 
-            QApplication.clipboard().setText(
-                self.table.item(row, 0).text()
-            )
+            index = self._column_index("Server")
+
+            if index is not None:
+
+                item = self.table.item(row, index)
+
+                QApplication.clipboard().setText(
+                    item.text() if item else ""
+                )
 
         elif action == copy_database:
 
-            QApplication.clipboard().setText(
-                self.table.item(row, 1).text()
-            )
+            index = self._column_index("Database")
+
+            if index is not None:
+
+                item = self.table.item(row, index)
+
+                QApplication.clipboard().setText(
+                    item.text() if item else ""
+                )
 
         elif action == export_csv:
 
@@ -1769,9 +1763,10 @@ class MainWindow(QWidget):
             if answer != QMessageBox.Yes:
                 return
 
-        self.sql_table.clear()
-        self.sql_table.setColumnCount(0)
-        self.sql_table.setRowCount(0)
+        self.table.clear()
+        self.table.setColumnCount(0)
+        self.table.setRowCount(0)
+        self.table.setSortingEnabled(False)
 
         self.lbl_sql_status.setText(
             f"Running on {len(targets)} target(s)..."
@@ -1867,8 +1862,7 @@ class MainWindow(QWidget):
     def _sql_clear(self):
 
         self.sql_editor.clear()
-        self.sql_table.setColumnCount(0)
-        self.sql_table.setRowCount(0)
+        self.clear_results()
         self.lbl_sql_status.setText("Ready")
 
     def _sql_busy(self, busy):
@@ -1889,6 +1883,9 @@ class MainWindow(QWidget):
 
     def _sql_finished(self):
 
+        self.table.setSortingEnabled(True)
+        self._repopulate_filter_column()
+        self._filter_results()
         self._sql_busy(False)
 
     def _sql_target_started(self, index, total, host, database):
@@ -1953,17 +1950,44 @@ class MainWindow(QWidget):
         message,
     ):
 
-        table = self.sql_table
+        self._fill_sql_result(
+            host,
+            database,
+            rows,
+            columns,
+            message,
+        )
+
+    def _fill_sql_result(
+        self,
+        host,
+        database,
+        rows,
+        columns,
+        message,
+    ):
+
+        table = self.table
 
         if table.columnCount() == 0:
 
             if columns:
-                labels = ["Server", "Database"] + columns
+                labels = ["Source", "Server", "Database"] + columns
             else:
-                labels = ["Server", "Database", "Result"]
+                labels = ["Source", "Server", "Database", "Result"]
 
             table.setColumnCount(len(labels))
             table.setHorizontalHeaderLabels(labels)
+
+            header = table.horizontalHeader()
+
+            header.setSectionResizeMode(
+                QHeaderView.ResizeToContents
+            )
+
+            header.setStretchLastSection(True)
+
+            self._repopulate_filter_column()
 
         base_row = table.rowCount()
 
@@ -1972,54 +1996,47 @@ class MainWindow(QWidget):
 
         table.setRowCount(base_row + len(rows))
 
+        count = table.columnCount()
+
         for r, row in enumerate(rows):
 
-            display = [host, database] + row
+            display = ["SQL", host, database] + row
+
+            if len(display) > count:
+                display = display[:count]
+
+            display += [""] * (count - len(display))
 
             for c, value in enumerate(display):
+
+                item = QTableWidgetItem(str(value))
+
+                item.setToolTip(str(value))
+
+                item.setFlags(
+                    item.flags() & ~Qt.ItemIsEditable
+                )
 
                 table.setItem(
                     base_row + r,
                     c,
-                    QTableWidgetItem(str(value)),
+                    item,
                 )
 
-        header = table.horizontalHeader()
-
-        header.setSectionResizeMode(
-            QHeaderView.ResizeToContents
-        )
-
-        header.setStretchLastSection(True)
-
-        if columns:
-            table.resizeColumnToContents(0)
+        self._filter_results()
 
     def _show_query_result(self, rows, columns, message):
 
-        self.sql_table.clear()
-        self.sql_table.setColumnCount(len(columns))
-        self.sql_table.setRowCount(len(rows))
-        self.sql_table.setHorizontalHeaderLabels(columns)
+        host = self.cb_server.currentText().strip()
+        database = self.cb_database.currentText().strip()
 
-        for r, row in enumerate(rows):
-            for c, value in enumerate(row):
-                self.sql_table.setItem(
-                    r,
-                    c,
-                    QTableWidgetItem(value),
-                )
-
-        header = self.sql_table.horizontalHeader()
-
-        header.setSectionResizeMode(
-            QHeaderView.ResizeToContents
+        self._fill_sql_result(
+            host,
+            database,
+            rows,
+            columns,
+            message,
         )
-
-        header.setStretchLastSection(True)
-
-        if columns:
-            self.sql_table.resizeColumnToContents(0)
 
         self.lbl_sql_status.setText(message)
         self._sql_busy(False)
@@ -2118,67 +2135,109 @@ class MainWindow(QWidget):
             f"{h:02}:{m:02}:{s:02}"
         )
 
+    def _column_index(self, name):
+
+        for column in range(self.table.columnCount()):
+
+            item = self.table.horizontalHeaderItem(column)
+
+            if item is not None and item.text() == name:
+                return column
+
+        return None
+
+    def _repopulate_filter_column(self):
+
+        if not self.combo_filter_column:
+            return
+
+        current = self.combo_filter_column.currentText()
+
+        headers = [
+            self.table.horizontalHeaderItem(column).text()
+            for column in range(self.table.columnCount())
+            if self.table.horizontalHeaderItem(column) is not None
+        ]
+
+        self.combo_filter_column.blockSignals(True)
+
+        self.combo_filter_column.clear()
+        self.combo_filter_column.addItems(headers)
+
+        if current in headers:
+            self.combo_filter_column.setCurrentText(current)
+        elif headers:
+            self.combo_filter_column.setCurrentIndex(0)
+
+        self.combo_filter_column.blockSignals(False)
+
+    def _clear_filters(self):
+
+        self.result_search.clear()
+        self.chk_only_errors.setChecked(False)
+        self.combo_filter_mode.setCurrentText("Contains")
+
+        if self.combo_filter_column.count():
+            self.combo_filter_column.setCurrentIndex(0)
+
+        self._filter_results()
+
     def _filter_results(self):
 
         search = self.result_search.text().strip().lower()
 
         only_errors = self.chk_only_errors.isChecked()
 
-        value_filter = self.combo_value.currentText()
+        mode = self.combo_filter_mode.currentText()
 
-        message_filter = self.combo_message.currentText()
+        column = self.combo_filter_column.currentText()
+
+        column_index = None
+
+        if column:
+
+            for index in range(self.table.columnCount()):
+
+                item = self.table.horizontalHeaderItem(index)
+
+                if item is not None and item.text() == column:
+                    column_index = index
+                    break
+
+        status_index = self._column_index("Status")
 
         def _is_empty(text):
             return text.strip() in ("", "-")
 
         for row in range(self.table.rowCount()):
 
-            server = self.table.item(row, 0)
-            database = self.table.item(row, 1)
-            status = self.table.item(row, 4)
-            value = self.table.item(row, 3)
-            message = self.table.item(row, 5)
-
-            server_text = server.text().lower() if server else ""
-            database_text = database.text().lower() if database else ""
-            status_text = status.text() if status else ""
-            value_text = value.text() if value else ""
-            message_text = message.text() if message else ""
-
             visible = True
 
-            # Поиск по серверу и базе
-            if search:
+            if visible and column_index is not None:
 
-                visible = (
-                    search in server_text
-                    or search in database_text
-                )
+                item = self.table.item(row, column_index)
 
-            # Показывать только ошибки
-            if visible and only_errors:
+                text = item.text() if item else ""
 
-                visible = (
-                    status_text == "ERROR"
-                )
+                if mode == "Contains":
+                    visible = search in text.lower()
 
-            # Фильтр по колонке Value
-            if visible and value_filter != "All":
+                elif mode == "Equals":
+                    visible = text.lower() == search
 
-                visible = (
-                    _is_empty(value_text)
-                    if value_filter == "Empty"
-                    else not _is_empty(value_text)
-                )
+                elif mode == "Empty":
+                    visible = _is_empty(text)
 
-            # Фильтр по колонке Message
-            if visible and message_filter != "All":
+                elif mode == "Not empty":
+                    visible = not _is_empty(text)
 
-                visible = (
-                    _is_empty(message_text)
-                    if message_filter == "Empty"
-                    else not _is_empty(message_text)
-                )
+            if visible and only_errors and status_index is not None:
+
+                item = self.table.item(row, status_index)
+
+                status_text = item.text() if item else ""
+
+                visible = status_text == "ERROR"
 
             self.table.setRowHidden(
                 row,
