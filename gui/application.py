@@ -6,7 +6,7 @@ from common.version import APP_VERSION
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"Parallel Admin v{APP_VERSION}")
+        self.setWindowTitle(f"Parallels SQL Admins v{APP_VERSION}")
         self.setMinimumSize(1200, 700)
 
         self.ui = MainWindow(self)

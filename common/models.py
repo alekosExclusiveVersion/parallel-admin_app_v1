@@ -1,7 +1,7 @@
 """
 common/models.py
 
-Модели данных проекта Parallel Admin.
+Модели данных проекта Parallels SQL Admins.
 """
 
 from __future__ import annotations

@@ -1,9 +1,10 @@
 import sys
 
-from PySide6.QtWidgets import QApplication, QStyle
+from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QColor, QPalette
 
 from gui.application import App
+from gui.icons import icon
 from gui.login_dialog import LoginDialog
 
 
@@ -52,11 +53,7 @@ def main():
 
     qt_app.setPalette(light_palette())
 
-    qt_app.setWindowIcon(
-        qt_app.style().standardIcon(
-            QStyle.SP_ComputerIcon
-        )
-    )
+    qt_app.setWindowIcon(icon("app_icon", size=64, color="#2563eb"))
 
     login = LoginDialog()
 

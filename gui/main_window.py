@@ -1393,7 +1393,7 @@ class MainWindow(QWidget):
 
         self.append_log(
             "INFO",
-            f"Parallel Admin v{APP_VERSION} started."
+            f"Parallels SQL Admins v{APP_VERSION} started."
         )
         self.append_log("SUCCESS", "GUI initialized.")
         self.append_log("INFO", "Ready.")
@@ -2180,7 +2180,7 @@ class MainWindow(QWidget):
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "Save log",
-            "parallel_admin.log",
+            "parallels_sql_admins.log",
             "Log files (*.log);;Text files (*.txt);;All files (*)",
         )
 
