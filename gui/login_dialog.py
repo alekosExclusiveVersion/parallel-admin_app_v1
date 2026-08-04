@@ -66,6 +66,8 @@ class LoginDialog(QDialog):
             background:white;
             color:#2563eb;
             font-weight:600;
+            font-size:13px;
+            text-align:center;
             padding:0 12px;
         }
 
@@ -100,9 +102,9 @@ class LoginDialog(QDialog):
         }
 
         QPushButton#btn_primary:disabled{
-            background:#93c5fd;
-            border-color:#93c5fd;
-            color:white;
+            background:#f1f5f9;
+            border-color:#cbd5e1;
+            color:#94a3b8;
         }
         """)
 

@@ -574,6 +574,7 @@ class MainWindow(QWidget):
             background:white;
             color:#2563eb;
             font-weight:600;
+            font-size:13px;
             text-align:center;
             padding:0 12px;
         }
@@ -1017,7 +1018,11 @@ class MainWindow(QWidget):
 
         filter_layout = QHBoxLayout()
 
-        filter_layout.addWidget(QLabel("Column:"))
+        self.lbl_column = QLabel("Колонка:")
+        self.lbl_column.setStyleSheet(
+            "border:none;background:transparent;color:#0f172a;"
+        )
+        filter_layout.addWidget(self.lbl_column)
 
         self.combo_filter_column = QComboBox()
         self.combo_filter_column.setMinimumWidth(120)
@@ -1065,17 +1070,8 @@ class MainWindow(QWidget):
 
         self.table = QTableWidget()
 
-        self.table.setColumnCount(7)
-
-        self.table.setHorizontalHeaderLabels([
-            "Source",
-            "Server",
-            "Database",
-            "Country",
-            "Value",
-            "Status",
-            "Message",
-        ])
+        # Колонки заполняются динамически при выполнении запроса:
+        # Check → clear_results(), SQL → _fill_sql_result().
 
         self.table.verticalHeader().setVisible(False)
 
@@ -1090,8 +1086,6 @@ class MainWindow(QWidget):
         header.setStretchLastSection(True)
 
         header.setSectionResizeMode(QHeaderView.Interactive)
-
-        header.resizeSection(4, 180)
 
         self.table.setAlternatingRowColors(True)
 
