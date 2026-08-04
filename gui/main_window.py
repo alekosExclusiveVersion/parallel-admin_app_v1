@@ -1041,13 +1041,15 @@ class MainWindow(QWidget):
 
         self.table.verticalHeader().setVisible(False)
 
+        self.table.verticalHeader().setDefaultSectionSize(28)
+
         self.table.verticalHeader().setSectionResizeMode(
-            QHeaderView.ResizeToContents
+            QHeaderView.Fixed
         )
 
         header = self.table.horizontalHeader()
 
-        header.setStretchLastSection(False)
+        header.setStretchLastSection(True)
 
         header.setSectionResizeMode(QHeaderView.Interactive)
 
@@ -1071,7 +1073,7 @@ class MainWindow(QWidget):
 
         self.table.setShowGrid(False)
 
-        self.table.setWordWrap(True)
+        self.table.setWordWrap(False)
 
         self.table.setCornerButtonEnabled(False)
 
@@ -1451,6 +1453,13 @@ class MainWindow(QWidget):
         self._update_elapsed
         )
 
+        self._filter_timer = QTimer(self)
+        self._filter_timer.setSingleShot(True)
+        self._filter_timer.setInterval(40)
+        self._filter_timer.timeout.connect(
+            self._filter_results
+        )
+
         self.result_search.textChanged.connect(
             self._filter_results
         )
@@ -1575,7 +1584,7 @@ class MainWindow(QWidget):
                 if item:
 
                     item.setBackground(background)
-        self._filter_results()
+        self._filter_timer.start()
 
     def clear_results(self):
 
@@ -1590,6 +1599,22 @@ class MainWindow(QWidget):
             "Status",
             "Message",
         ])
+
+        header = self.table.horizontalHeader()
+
+        header.setSectionResizeMode(QHeaderView.Interactive)
+
+        header.setStretchLastSection(True)
+
+        fixed_widths = {
+            0: 64,
+            1: 190,
+            2: 160,
+            4: 180,
+        }
+
+        for index, width in fixed_widths.items():
+            header.resizeSection(index, width)
 
         self._repopulate_filter_column()
         self._filter_results()
@@ -1982,10 +2007,20 @@ class MainWindow(QWidget):
             header = table.horizontalHeader()
 
             header.setSectionResizeMode(
-                QHeaderView.ResizeToContents
+                QHeaderView.Interactive
             )
 
             header.setStretchLastSection(True)
+
+            fixed_widths = {
+                0: 64,
+                1: 190,
+                2: 160,
+            }
+
+            for index, width in fixed_widths.items():
+                if index < len(labels):
+                    header.resizeSection(index, width)
 
             self._repopulate_filter_column()
 
@@ -2023,7 +2058,7 @@ class MainWindow(QWidget):
                     item,
                 )
 
-        self._filter_results()
+        self._filter_timer.start()
 
     def _show_query_result(self, rows, columns, message):
 
@@ -2209,40 +2244,58 @@ class MainWindow(QWidget):
         def _is_empty(text):
             return text.strip() in ("", "-")
 
-        for row in range(self.table.rowCount()):
+        table = self.table
 
-            visible = True
+        sorting = table.isSortingEnabled()
 
-            if visible and column_index is not None:
+        table.setSortingEnabled(False)
 
-                item = self.table.item(row, column_index)
+        table.setUpdatesEnabled(False)
 
-                text = item.text() if item else ""
+        try:
 
-                if mode == "Contains":
-                    visible = search in text.lower()
+            for row in range(table.rowCount()):
 
-                elif mode == "Equals":
-                    visible = text.lower() == search
+                visible = True
 
-                elif mode == "Empty":
-                    visible = _is_empty(text)
+                if visible and column_index is not None:
 
-                elif mode == "Not empty":
-                    visible = not _is_empty(text)
+                    item = table.item(row, column_index)
 
-            if visible and only_errors and status_index is not None:
+                    text = item.text() if item else ""
 
-                item = self.table.item(row, status_index)
+                    if mode == "Contains":
+                        visible = search in text.lower()
 
-                status_text = item.text() if item else ""
+                    elif mode == "Equals":
+                        visible = text.lower() == search
 
-                visible = status_text == "ERROR"
+                    elif mode == "Empty":
+                        visible = _is_empty(text)
 
-            self.table.setRowHidden(
-                row,
-                not visible,
-            )
+                    elif mode == "Not empty":
+                        visible = not _is_empty(text)
+
+                if visible and only_errors and status_index is not None:
+
+                    item = table.item(row, status_index)
+
+                    status_text = item.text() if item else ""
+
+                    visible = status_text == "ERROR"
+
+                table.setRowHidden(
+                    row,
+                    not visible,
+                )
+
+        finally:
+
+            table.setUpdatesEnabled(True)
+
+            table.setSortingEnabled(sorting)
+
+        table.viewport().update()
 
     def _export_csv(self):
 
