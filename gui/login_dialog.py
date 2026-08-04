@@ -61,15 +61,24 @@ class LoginDialog(QDialog):
 
         QPushButton{
             min-height:28px;
-            border:1px solid #e3e8ef;
+            border:1px solid #2563eb;
             border-radius:6px;
             background:white;
-            color:#0f172a;
+            color:#2563eb;
+            font-weight:600;
             padding:0 12px;
         }
 
         QPushButton:hover{
-            background:#f8fafc;
+            background:#eff6ff;
+            border-color:#1d4ed8;
+            color:#1d4ed8;
+        }
+
+        QPushButton:pressed{
+            background:#dbeafe;
+            border-color:#1e40af;
+            color:#1e40af;
         }
 
         QPushButton#btn_primary{
@@ -82,6 +91,12 @@ class LoginDialog(QDialog):
         QPushButton#btn_primary:hover{
             background:#1d4ed8;
             border-color:#1d4ed8;
+            color:white;
+        }
+
+        QPushButton#btn_primary:pressed{
+            background:#1e40af;
+            color:white;
         }
 
         QPushButton#btn_primary:disabled{

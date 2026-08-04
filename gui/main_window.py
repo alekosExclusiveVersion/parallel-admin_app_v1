@@ -8,6 +8,7 @@ from backend.check_worker import CheckWorker
 from backend.query_worker import ALL_DATABASES, QueryWorker
 from common.sql_builder import sql_builder
 from common.version import APP_VERSION
+from gui.icons import icon
 from PySide6.QtCore import (
     Qt,
     QSize,
@@ -112,30 +113,6 @@ class MainWindow(QWidget):
         self._create_query_backend()
 
         self._load_servers()
-
-    # ----------------------------------------------------------
-    # Icons
-    # ----------------------------------------------------------
-
-    @staticmethod
-    def _glyph_icon(glyph: str, size: int = 20) -> QIcon:
-
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.transparent)
-
-        painter = QPainter(pixmap)
-        font = QFont()
-        font.setPixelSize(14)
-        painter.setFont(font)
-        painter.setPen(QColor("#0f172a"))
-        painter.drawText(
-            pixmap.rect(),
-            Qt.AlignCenter,
-            glyph,
-        )
-        painter.end()
-
-        return QIcon(pixmap)
 
     # ----------------------------------------------------------
     # Backend
@@ -576,13 +553,12 @@ class MainWindow(QWidget):
             border-radius:6px;
             background:transparent;
             padding:4px 6px;
-            font-size:14px;
-            color:#64748b;
+            color:#475569;
         }
 
         QToolButton#btn_icon:hover{
-            background:#f1f5f9;
-            color:#0f172a;
+            background:#eff6ff;
+            color:#2563eb;
         }
 
         QToolButton#btn_icon:disabled{
@@ -593,25 +569,30 @@ class MainWindow(QWidget):
         /* --- Buttons --- */
         QPushButton{
             min-height:28px;
-            border:1px solid #e3e8ef;
+            border:1px solid #2563eb;
             border-radius:6px;
             background:white;
-            color:#0f172a;
+            color:#2563eb;
+            font-weight:600;
             text-align:center;
             padding:0 12px;
         }
 
         QPushButton:hover{
-            background:#f8fafc;
+            background:#eff6ff;
+            border-color:#1d4ed8;
+            color:#1d4ed8;
         }
 
         QPushButton:pressed{
-            background:#f1f5f9;
+            background:#dbeafe;
+            border-color:#1e40af;
+            color:#1e40af;
         }
 
         QPushButton:disabled{
             background:#f1f5f9;
-            border-color:#e3e8ef;
+            border-color:#cbd5e1;
             color:#94a3b8;
         }
 
@@ -629,10 +610,37 @@ class MainWindow(QWidget):
         QPushButton#btn_primary:hover{
             background:#1d4ed8;
             border-color:#1d4ed8;
+            color:white;
         }
 
         QPushButton#btn_primary:pressed{
             background:#1e40af;
+            color:white;
+        }
+
+        QPushButton#btn_danger{
+            background:white;
+            border:1px solid #dc2626;
+            color:#dc2626;
+            font-weight:600;
+        }
+
+        QPushButton#btn_danger:hover{
+            background:#fef2f2;
+            border-color:#b91c1c;
+            color:#b91c1c;
+        }
+
+        QPushButton#btn_danger:pressed{
+            background:#fee2e2;
+            border-color:#991b1b;
+            color:#991b1b;
+        }
+
+        QPushButton#btn_danger:disabled{
+            background:#f1f5f9;
+            border-color:#cbd5e1;
+            color:#94a3b8;
         }
 
         /* --- Checkbox --- */
@@ -820,29 +828,30 @@ class MainWindow(QWidget):
         content.setSpacing(6)
 
         self.toolbar = QToolBar()
+        self.toolbar.setIconSize(QSize(20, 20))
 
         self.action_refresh = QAction(
-            self._glyph_icon("\u27F3"),
+            icon("refresh", 20, "#0f172a"),
             "Refresh",
             self,
         )
         self.action_check = QAction(
-            self._glyph_icon("\u25B6"),
+            icon("play_arrow", 20, "#0f172a"),
             "Check",
             self,
         )
         self.action_update = QAction(
-            self._glyph_icon("\u270F"),
+            icon("edit", 20, "#0f172a"),
             "Update",
             self,
         )
         self.action_verify = QAction(
-            self._glyph_icon("\u2713"),
+            icon("check_circle", 20, "#0f172a"),
             "Verify",
             self,
         )
         self.action_stop = QAction(
-            self._glyph_icon("\u25A0"),
+            icon("stop", 20, "#0f172a"),
             "Stop",
             self,
         )
@@ -958,17 +967,20 @@ class MainWindow(QWidget):
 
         self.btn_select_all = QToolButton()
         self.btn_select_all.setObjectName("btn_icon")
-        self.btn_select_all.setText("\u2611")
+        self.btn_select_all.setIcon(icon("done_all"))
+        self.btn_select_all.setIconSize(QSize(16, 16))
         self.btn_select_all.setToolTip("Select All")
 
         self.btn_clear = QToolButton()
         self.btn_clear.setObjectName("btn_icon")
-        self.btn_clear.setText("\u2715")
+        self.btn_clear.setIcon(icon("close"))
+        self.btn_clear.setIconSize(QSize(16, 16))
         self.btn_clear.setToolTip("Clear selection")
 
         self.btn_invert = QToolButton()
         self.btn_invert.setObjectName("btn_icon")
-        self.btn_invert.setText("\u21C4")
+        self.btn_invert.setIcon(icon("swap_horiz"))
+        self.btn_invert.setIconSize(QSize(16, 16))
         self.btn_invert.setToolTip("Invert selection")
 
         buttons.addWidget(self.btn_select_all)
@@ -1039,7 +1051,7 @@ class MainWindow(QWidget):
         filter_layout.addWidget(self.combo_filter_mode)
 
         self.chk_only_errors = QCheckBox(
-            "Only Errors"
+            "Только ошибки"
         )
 
         filter_layout.addWidget(self.chk_only_errors)
@@ -1142,17 +1154,20 @@ class MainWindow(QWidget):
 
         self.btn_log_clear = QToolButton()
         self.btn_log_clear.setObjectName("btn_icon")
-        self.btn_log_clear.setText("\u2715")
+        self.btn_log_clear.setIcon(icon("delete_outline"))
+        self.btn_log_clear.setIconSize(QSize(16, 16))
         self.btn_log_clear.setToolTip("Clear log")
 
         self.btn_log_copy = QToolButton()
         self.btn_log_copy.setObjectName("btn_icon")
-        self.btn_log_copy.setText("\u29C9")
+        self.btn_log_copy.setIcon(icon("content_copy"))
+        self.btn_log_copy.setIconSize(QSize(16, 16))
         self.btn_log_copy.setToolTip("Copy log")
 
         self.btn_log_save = QToolButton()
         self.btn_log_save.setObjectName("btn_icon")
-        self.btn_log_save.setText("\u2913")
+        self.btn_log_save.setIcon(icon("download"))
+        self.btn_log_save.setIconSize(QSize(16, 16))
         self.btn_log_save.setToolTip("Save log")
 
         top.addWidget(self.btn_log_clear)
@@ -1187,7 +1202,8 @@ class MainWindow(QWidget):
 
         self.btn_query_clear = QToolButton()
         self.btn_query_clear.setObjectName("btn_icon")
-        self.btn_query_clear.setText("\u2715")
+        self.btn_query_clear.setIcon(icon("delete_outline"))
+        self.btn_query_clear.setIconSize(QSize(16, 16))
         self.btn_query_clear.setToolTip("Clear query log")
 
         qtop.addWidget(self.btn_query_clear)
@@ -1256,12 +1272,14 @@ class MainWindow(QWidget):
 
         self.btn_sql_refresh_db = QToolButton()
         self.btn_sql_refresh_db.setObjectName("btn_icon")
-        self.btn_sql_refresh_db.setText("\u27F3")
+        self.btn_sql_refresh_db.setIcon(icon("refresh"))
+        self.btn_sql_refresh_db.setIconSize(QSize(16, 16))
         self.btn_sql_refresh_db.setToolTip("Refresh databases")
 
         self.btn_sql_clear = QToolButton()
         self.btn_sql_clear.setObjectName("btn_icon")
-        self.btn_sql_clear.setText("\u2715")
+        self.btn_sql_clear.setIcon(icon("delete_outline"))
+        self.btn_sql_clear.setIconSize(QSize(16, 16))
         self.btn_sql_clear.setToolTip("Clear console")
 
         sctop.addWidget(self.btn_sql_refresh_db)
@@ -1300,7 +1318,7 @@ class MainWindow(QWidget):
         scontrols.addWidget(self.cb_server)
         scontrols.addWidget(self.cb_database)
 
-        self.chk_write = QCheckBox("Allow write queries")
+        self.chk_write = QCheckBox("Разрешить запросы на запись")
         scontrols.addWidget(self.chk_write)
 
         scontrols.addStretch()
@@ -1316,17 +1334,17 @@ class MainWindow(QWidget):
         scope_row = QHBoxLayout()
 
         self.chk_all_servers = QCheckBox(
-            "All selected servers"
+            "Все выбранные серверы"
         )
         self.chk_all_servers.setToolTip(
-            "Run on servers selected in the list"
+            "Выполнять на серверах, выбранных в списке"
         )
 
         self.chk_all_databases = QCheckBox(
-            "All databases"
+            "Все базы данных"
         )
         self.chk_all_databases.setToolTip(
-            "Run against every database of each server"
+            "Выполнять по всем базам данных каждого сервера"
         )
 
         scope_row.addWidget(self.chk_all_servers)
@@ -1335,6 +1353,7 @@ class MainWindow(QWidget):
         scope_row.addStretch()
 
         self.btn_sql_stop = QPushButton("Stop")
+        self.btn_sql_stop.setObjectName("btn_danger")
         self.btn_sql_stop.setEnabled(False)
 
         scope_row.addWidget(self.btn_sql_stop)
