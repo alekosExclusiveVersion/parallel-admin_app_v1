@@ -5,7 +5,7 @@ from datetime import datetime
 from PySide6.QtCore import QTimer
 from backend.repository import Repository
 from backend.check_worker import CheckWorker
-from backend.query_worker import QueryWorker
+from backend.query_worker import ALL_DATABASES, QueryWorker
 from common.sql_builder import sql_builder
 from common.version import APP_VERSION
 from PySide6.QtCore import (
@@ -226,6 +226,26 @@ class MainWindow(QWidget):
             self._show_databases
         )
 
+        self.query_worker.started_target.connect(
+            self._sql_target_started
+        )
+
+        self.query_worker.result_target.connect(
+            self._sql_target_result
+        )
+
+        self.query_worker.error_target.connect(
+            self._sql_target_error
+        )
+
+        self.query_worker.stopped.connect(
+            self._sql_target_stopped
+        )
+
+        self.query_worker.finished.connect(
+            self._sql_finished
+        )
+
     def _update_progress(self, current, total):
 
         if total == 0:
@@ -259,6 +279,9 @@ class MainWindow(QWidget):
             self.cb_server.setCurrentText(current_server)
 
         self.cb_server.blockSignals(False)
+
+        if self.cb_server.currentText().strip():
+            self._sql_refresh_databases()
 
         count = len(servers)
 
@@ -1299,6 +1322,34 @@ class MainWindow(QWidget):
 
         sql_console_layout.addLayout(scontrols)
 
+        scope_row = QHBoxLayout()
+
+        self.chk_all_servers = QCheckBox(
+            "All selected servers"
+        )
+        self.chk_all_servers.setToolTip(
+            "Run on servers selected in the list"
+        )
+
+        self.chk_all_databases = QCheckBox(
+            "All databases"
+        )
+        self.chk_all_databases.setToolTip(
+            "Run against every database of each server"
+        )
+
+        scope_row.addWidget(self.chk_all_servers)
+        scope_row.addWidget(self.chk_all_databases)
+
+        scope_row.addStretch()
+
+        self.btn_sql_stop = QPushButton("Stop")
+        self.btn_sql_stop.setEnabled(False)
+
+        scope_row.addWidget(self.btn_sql_stop)
+
+        sql_console_layout.addLayout(scope_row)
+
         self.sql_editor = QPlainTextEdit()
         self.sql_editor.setLineWrapMode(
             QPlainTextEdit.NoWrap
@@ -1393,6 +1444,22 @@ class MainWindow(QWidget):
 
         self.btn_sql_run.clicked.connect(
             self._sql_run
+        )
+
+        self.btn_sql_stop.clicked.connect(
+            self._sql_stop
+        )
+
+        self.chk_all_servers.toggled.connect(
+            self._sql_scope_changed
+        )
+
+        self.chk_all_databases.toggled.connect(
+            self._sql_scope_changed
+        )
+
+        self.cb_server.activated.connect(
+            self._sql_server_changed
         )
 
         self.sql_run_shortcut = QShortcut(
@@ -1686,13 +1753,11 @@ class MainWindow(QWidget):
         if not sql:
             return
 
-        host = self.cb_server.currentText().strip()
+        targets = self._sql_build_targets()
 
-        if not host:
-            self._sql_error("No server selected.")
+        if not targets:
+            self.lbl_sql_status.setText("No targets selected.")
             return
-
-        database = self.cb_database.currentText().strip()
 
         if not self.chk_write.isChecked() and is_write_statement(sql):
             answer = QMessageBox.question(
@@ -1704,17 +1769,81 @@ class MainWindow(QWidget):
             if answer != QMessageBox.Yes:
                 return
 
-        self.lbl_sql_status.setText("Running...")
+        self.sql_table.clear()
+        self.sql_table.setColumnCount(0)
+        self.sql_table.setRowCount(0)
+
+        self.lbl_sql_status.setText(
+            f"Running on {len(targets)} target(s)..."
+        )
         self._sql_busy(True)
 
-        self.query_worker.set_request(
-            host,
-            database,
-            sql,
-            1000,
-        )
+        if (
+            len(targets) == 1
+            and targets[0][1] != ALL_DATABASES
+        ):
+            self.query_worker.set_request(
+                targets[0][0],
+                targets[0][1],
+                sql,
+                1000,
+            )
+
+        else:
+
+            self.query_worker.set_multi_request(
+                targets,
+                sql,
+                1000,
+            )
 
         self.query_thread.start()
+
+    def _sql_build_targets(self):
+
+        if self.chk_all_servers.isChecked():
+
+            hosts = [
+                item.text().strip()
+                for item in self.server_list.selectedItems()
+            ]
+
+            hosts = [host for host in hosts if host]
+
+        else:
+
+            host = self.cb_server.currentText().strip()
+            hosts = [host] if host else []
+
+        if not hosts:
+            return []
+
+        if self.chk_all_databases.isChecked():
+            database = ALL_DATABASES
+        else:
+            database = self.cb_database.currentText().strip() or None
+
+        return [
+            (host, database) for host in hosts
+        ]
+
+    def _sql_server_changed(self, text):
+        self._sql_refresh_databases()
+
+    def _sql_scope_changed(self, checked):
+
+        self.cb_server.setEnabled(
+            not self.chk_all_servers.isChecked()
+        )
+
+        self.cb_database.setEnabled(
+            not self.chk_all_databases.isChecked()
+        )
+
+    def _sql_stop(self):
+
+        self.query_worker.stop()
+        self.lbl_sql_status.setText("Stopping...")
 
     def _sql_refresh_databases(self):
 
@@ -1729,6 +1858,7 @@ class MainWindow(QWidget):
 
         self.lbl_sql_status.setText("Loading databases...")
         self._sql_busy(True)
+        self.btn_sql_stop.setEnabled(False)
 
         self.query_worker.set_databases_request(host)
 
@@ -1745,8 +1875,125 @@ class MainWindow(QWidget):
 
         self.btn_sql_run.setEnabled(not busy)
         self.btn_sql_refresh_db.setEnabled(not busy)
-        self.cb_server.setEnabled(not busy)
-        self.cb_database.setEnabled(not busy)
+        self.btn_sql_stop.setEnabled(busy)
+        self.chk_all_servers.setEnabled(not busy)
+        self.chk_all_databases.setEnabled(not busy)
+
+        self.cb_server.setEnabled(
+            not busy and not self.chk_all_servers.isChecked()
+        )
+
+        self.cb_database.setEnabled(
+            not busy and not self.chk_all_databases.isChecked()
+        )
+
+    def _sql_finished(self):
+
+        self._sql_busy(False)
+
+    def _sql_target_started(self, index, total, host, database):
+
+        self.lbl_sql_status.setText(
+            f"Running ({index}/{total}) {host}.{database}"
+        )
+
+    def _sql_target_result(
+        self,
+        host,
+        database,
+        rows,
+        columns,
+        message,
+    ):
+
+        self._append_sql_result(
+            host,
+            database,
+            rows,
+            columns,
+            message,
+        )
+
+        self.lbl_sql_status.setText(
+            f"OK {host}.{database} — {message}"
+        )
+
+    def _sql_target_error(self, host, database, message):
+
+        self.append_log(
+            "ERROR",
+            f"SQL [{host}.{database}]: {message}",
+        )
+
+        self._append_sql_result(
+            host,
+            database,
+            [],
+            [],
+            f"ERROR: {message}",
+        )
+
+        self.lbl_sql_status.setText(
+            f"Error {host}.{database}"
+        )
+
+    def _sql_target_stopped(self, done, total):
+
+        self.lbl_sql_status.setText(
+            f"Stopped ({done} of {total})"
+        )
+        self._sql_busy(False)
+
+    def _append_sql_result(
+        self,
+        host,
+        database,
+        rows,
+        columns,
+        message,
+    ):
+
+        table = self.sql_table
+
+        if table.columnCount() == 0:
+
+            if columns:
+                labels = ["Server", "Database"] + columns
+            else:
+                labels = ["Server", "Database", "Result"]
+
+            table.setColumnCount(len(labels))
+            table.setHorizontalHeaderLabels(labels)
+
+        base_row = table.rowCount()
+
+        if not columns:
+            rows = [[message]]
+
+        table.setRowCount(base_row + len(rows))
+
+        for r, row in enumerate(rows):
+
+            display = [host, database] + row
+
+            for c, value in enumerate(display):
+
+                table.setItem(
+                    base_row + r,
+                    c,
+                    QTableWidgetItem(str(value)),
+                )
+
+        header = table.horizontalHeader()
+
+        header.setSectionResizeMode(
+            QHeaderView.ResizeToContents
+        )
+
+        header.setStretchLastSection(True)
+
+        if columns:
+            table.resizeColumnToContents(0)
 
     def _show_query_result(self, rows, columns, message):
 
