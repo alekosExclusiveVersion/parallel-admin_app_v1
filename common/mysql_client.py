@@ -8,6 +8,7 @@ from __future__ import annotations
 
 
 import re
+import threading
 import time
 from contextlib import contextmanager
 from typing import Any
@@ -25,9 +26,15 @@ class MySQLClient:
     def __init__(self) -> None:
         self.cfg = config.mysql
         self._query_hook = None
+        self._hook_lock = threading.Lock()
 
     def set_query_hook(self, hook) -> None:
-        self._query_hook = hook
+        with self._hook_lock:
+            self._query_hook = hook
+
+    def _get_query_hook(self):
+        with self._hook_lock:
+            return self._query_hook
 
     @contextmanager
     def connect(self, host: str, database: str | None = None):
@@ -74,8 +81,10 @@ class MySQLClient:
         params=None,
     ):
 
-        if self._query_hook is not None:
-            self._query_hook(
+        hook = self._get_query_hook()
+
+        if hook is not None:
+            hook(
                 sql,
                 getattr(conn, "host", ""),
             )
@@ -145,7 +154,7 @@ class MySQLClient:
     SELECT
         stg_name,
         stg_value
-    FROM {database}.{config.advanced.settings_table}
+    FROM {sql_builder.quote_identifier(database)}.{sql_builder.quote_identifier(config.advanced.settings_table)}
     WHERE stg_name IN (%s,%s)
     """
 
@@ -201,7 +210,7 @@ class MySQLClient:
 SELECT
     stg_name,
     stg_value
-FROM {config.advanced.settings_table}
+FROM {sql_builder.quote_identifier(database)}.{sql_builder.quote_identifier(config.advanced.settings_table)}
 WHERE stg_name IN (%s,%s)
 """
         rows = self.query(
@@ -218,7 +227,7 @@ WHERE stg_name IN (%s,%s)
     def update_setting(self, host: str, database: str,
                        name: str, value: str) -> int:
         sql = f"""
-UPDATE {config.advanced.settings_table}
+UPDATE {sql_builder.quote_identifier(database)}.{sql_builder.quote_identifier(config.advanced.settings_table)}
 SET stg_value=%s
 WHERE stg_name=%s
 """

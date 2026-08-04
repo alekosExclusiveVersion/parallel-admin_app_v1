@@ -59,11 +59,9 @@ class ProjectRepository:
             )
             for p in self.find_projects(server)
         ]
-    
-    raise RuntimeError(
-        "Режим обновления временно отключён. Используйте только check.py."
-    )
-    # def update(self, server: str):
+
+    # Режим массового обновления временно отключён.
+    # Метод update() закомментирован намеренно.
     # def update(self, server: str) -> list[UpdateResult]:
     #     results: list[UpdateResult] = []
 
@@ -92,7 +90,7 @@ class ProjectRepository:
     #             )
     #         )
 
-        # return results
+    #     return results
 
     def verify(self, server: str) -> list[VerifyResult]:
         rows: list[VerifyResult] = []
