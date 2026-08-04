@@ -390,6 +390,11 @@ class MainWindow(QWidget):
             background:#f3f5f7;
         }
 
+        QLabel{
+            color:#2d3436;
+            background:transparent;
+        }
+
         QLabel#SectionTitle{
             font-size:15px;
             font-weight:700;
@@ -434,6 +439,7 @@ class MainWindow(QWidget):
             background:white;
             border:1px solid #dfe6e9;
             border-radius:4px;
+            color:#2d3436;
             font-size:13px;
             padding:4px;
         }
