@@ -48,6 +48,8 @@ def main():
 
     qt_app = QApplication(sys.argv)
 
+    qt_app.setStyle("Fusion")
+
     qt_app.setPalette(light_palette())
 
     qt_app.setWindowIcon(
