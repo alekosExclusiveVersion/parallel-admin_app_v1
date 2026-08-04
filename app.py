@@ -16,25 +16,25 @@ def light_palette() -> QPalette:
         QPalette.Active,
         QPalette.Inactive,
     ):
-        p.setColor(group, QPalette.Window, QColor("#f3f5f7"))
-        p.setColor(group, QPalette.WindowText, QColor("#2d3436"))
+        p.setColor(group, QPalette.Window, QColor("#f4f6f8"))
+        p.setColor(group, QPalette.WindowText, QColor("#0f172a"))
         p.setColor(group, QPalette.Base, QColor("#ffffff"))
-        p.setColor(group, QPalette.AlternateBase, QColor("#f8f9fa"))
-        p.setColor(group, QPalette.Text, QColor("#2d3436"))
-        p.setColor(group, QPalette.PlaceholderText, QColor("#7f8c8d"))
+        p.setColor(group, QPalette.AlternateBase, QColor("#f8fafc"))
+        p.setColor(group, QPalette.Text, QColor("#0f172a"))
+        p.setColor(group, QPalette.PlaceholderText, QColor("#94a3b8"))
         p.setColor(group, QPalette.Button, QColor("#ffffff"))
-        p.setColor(group, QPalette.ButtonText, QColor("#2d3436"))
-        p.setColor(group, QPalette.Highlight, QColor("#1976d2"))
+        p.setColor(group, QPalette.ButtonText, QColor("#0f172a"))
+        p.setColor(group, QPalette.Highlight, QColor("#2563eb"))
         p.setColor(group, QPalette.HighlightedText, QColor("#ffffff"))
-        p.setColor(group, QPalette.Link, QColor("#1976d2"))
+        p.setColor(group, QPalette.Link, QColor("#2563eb"))
         p.setColor(group, QPalette.BrightText, QColor("#ffffff"))
         p.setColor(group, QPalette.ToolTipBase, QColor("#ffffff"))
-        p.setColor(group, QPalette.ToolTipText, QColor("#2d3436"))
+        p.setColor(group, QPalette.ToolTipText, QColor("#0f172a"))
 
-    p.setColor(QPalette.Disabled, QPalette.Text, QColor("#9aa4af"))
-    p.setColor(QPalette.Disabled, QPalette.WindowText, QColor("#9aa4af"))
-    p.setColor(QPalette.Disabled, QPalette.ButtonText, QColor("#9aa4af"))
-    p.setColor(QPalette.Disabled, QPalette.Highlight, QColor("#c4cdd5"))
+    p.setColor(QPalette.Disabled, QPalette.Text, QColor("#94a3b8"))
+    p.setColor(QPalette.Disabled, QPalette.WindowText, QColor("#94a3b8"))
+    p.setColor(QPalette.Disabled, QPalette.ButtonText, QColor("#94a3b8"))
+    p.setColor(QPalette.Disabled, QPalette.Highlight, QColor("#cbd5e1"))
     p.setColor(
         QPalette.Disabled,
         QPalette.HighlightedText,

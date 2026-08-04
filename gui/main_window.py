@@ -127,7 +127,7 @@ class MainWindow(QWidget):
         font = QFont()
         font.setPixelSize(14)
         painter.setFont(font)
-        painter.setPen(QColor("#2d3436"))
+        painter.setPen(QColor("#0f172a"))
         painter.drawText(
             pixmap.rect(),
             Qt.AlignCenter,
@@ -387,48 +387,56 @@ class MainWindow(QWidget):
 
         self.setStyleSheet("""
         QWidget#MainWindow{
-            background:#f3f5f7;
+            background:#f4f6f8;
         }
 
         QLabel{
-            color:#2d3436;
+            color:#0f172a;
             background:transparent;
+            border:none;
         }
 
         QLabel#SectionTitle{
-            font-size:15px;
-            font-weight:700;
-            color:#2d3436;
+            font-size:13px;
+            font-weight:600;
+            color:#334155;
             border:none;
             background:transparent;
-        }
-
-        QFrame#StatusBar{
-            background:#24292e;
-            border:1px solid #24292e;
-            border-radius:8px;
-        }
-
-        QFrame#StatusBar QProgressBar{
-            background:rgba(255,255,255,0.14);
-            border:none;
-            border-radius:4px;
-            min-height:8px;
-            max-height:8px;
-            text-align:center;
-        }
-
-        QFrame#StatusBar QProgressBar::chunk{
-            background:#1976d2;
-            border-radius:4px;
         }
 
         QFrame{
             background:white;
-            border:1px solid #dfe6e9;
-            border-radius:8px;
+            border:1px solid #e3e8ef;
+            border-radius:10px;
         }
 
+        /* --- Status bar (full-bleed) --- */
+        QFrame#StatusBar{
+            background:#0f172a;
+            border:none;
+            border-radius:0;
+        }
+
+        QFrame#StatusBar QLabel{
+            border:none;
+            background:transparent;
+        }
+
+        QFrame#StatusBar QProgressBar{
+            background:rgba(255,255,255,0.12);
+            border:none;
+            border-radius:4px;
+            min-height:6px;
+            max-height:6px;
+            text-align:center;
+        }
+
+        QFrame#StatusBar QProgressBar::chunk{
+            background:#3b82f6;
+            border-radius:4px;
+        }
+
+        /* --- Inputs --- */
         QListWidget,
         QTextEdit,
         QPlainTextEdit,
@@ -437,11 +445,13 @@ class MainWindow(QWidget):
         QComboBox,
         QAbstractSpinBox{
             background:white;
-            border:1px solid #dfe6e9;
-            border-radius:4px;
-            color:#2d3436;
+            border:1px solid #e3e8ef;
+            border-radius:6px;
+            color:#0f172a;
             font-size:13px;
             padding:4px;
+            selection-background-color:#eff6ff;
+            selection-color:#0f172a;
         }
 
         QListWidget:focus,
@@ -449,7 +459,7 @@ class MainWindow(QWidget):
         QPlainTextEdit:focus,
         QLineEdit:focus,
         QComboBox:focus{
-            border:1px solid #1976d2;
+            border:1px solid #2563eb;
         }
 
         QComboBox{
@@ -458,122 +468,21 @@ class MainWindow(QWidget):
 
         QComboBox QAbstractItemView{
             background:white;
-            border:1px solid #dfe6e9;
-            border-radius:4px;
+            border:1px solid #e3e8ef;
+            border-radius:8px;
             outline:none;
             padding:6px;
-            selection-background-color:#e3f2fd;
-            selection-color:#2d3436;
+            selection-background-color:#eff6ff;
+            selection-color:#0f172a;
         }
 
         QComboBox QAbstractItemView::item{
             border:none;
-            border-radius:4px;
+            border-radius:6px;
         }
 
         QComboBox QAbstractItemView::item:hover{
-            background:#eef1f4;
-        }
-
-        QToolBar{
-            background:white;
-            border:1px solid #dfe6e9;
-            padding:6px;
-            spacing:6px;
-        }
-
-        QToolButton{
-            border:1px solid #d0d7de;
-            border-radius:4px;
-            background:white;
-            padding:6px 14px;
-            text-align:center;
-        }
-
-        QToolButton:hover{
-            background:#f5f5f5;
-        }
-
-        QToolButton:disabled{
-            background:#e9ecef;
-            border-color:#dfe6e9;
-            color:#9aa4af;
-        }
-
-        QToolButton#btn_icon{
-            border:none;
-            border-radius:4px;
-            background:transparent;
-            padding:4px 6px;
-            font-size:14px;
-            color:#57606a;
-        }
-
-        QToolButton#btn_icon:hover{
-            background:#eef1f4;
-            color:#2d3436;
-        }
-
-        QToolButton#btn_icon:disabled{
-            background:transparent;
-            color:#c4cdd5;
-        }
-
-        QPushButton{
-            min-height:28px;
-            border:1px solid #d0d7de;
-            border-radius:4px;
-            background:white;
-            text-align:center;
-            padding:0 12px;
-        }
-
-        QPushButton:hover{
-            background:#f5f5f5;
-        }
-
-        QPushButton:disabled{
-            background:#e9ecef;
-            border-color:#dfe6e9;
-            color:#9aa4af;
-        }
-
-        QPushButton:focus{
-            border:1px solid #1976d2;
-        }
-
-        QPushButton#btn_primary{
-            background:#1976d2;
-            border:1px solid #1976d2;
-            color:white;
-            font-weight:600;
-        }
-
-        QPushButton#btn_primary:hover{
-            background:#1565c0;
-            border-color:#1565c0;
-        }
-
-        QPushButton#btn_primary:pressed{
-            background:#0d47a1;
-        }
-
-        QCheckBox{
-            font-size:13px;
-            margin:0 8px;
-        }
-
-        QCheckBox::indicator{
-            width:16px;
-            height:16px;
-            border:1px solid #c4cdd5;
-            border-radius:4px;
-            background:white;
-        }
-
-        QCheckBox::indicator:checked{
-            background:#1976d2;
-            border-color:#1976d2;
+            background:#f1f5f9;
         }
 
         QComboBox QFrame{
@@ -582,38 +491,166 @@ class MainWindow(QWidget):
             border-radius:0;
         }
 
-        QHeaderView::section{
-            background:#f8f9fa;
+        /* --- Toolbar --- */
+        QToolBar{
+            background:white;
+            border:1px solid #e3e8ef;
+            border-radius:10px;
+            padding:4px;
+            spacing:4px;
+        }
+
+        QToolBar::separator{
+            width:1px;
+            background:#e2e8f0;
+            margin:4px 2px;
+        }
+
+        QToolBar QToolButton{
             border:none;
-            border-bottom:2px solid #dfe6e9;
-            border-right:1px solid #eef1f4;
+            border-radius:6px;
+            background:transparent;
+            padding:6px;
+            color:#64748b;
+        }
+
+        QToolBar QToolButton:hover{
+            background:#f1f5f9;
+            color:#0f172a;
+        }
+
+        QToolBar QToolButton:pressed{
+            background:#e2e8f0;
+        }
+
+        QToolBar QToolButton:disabled{
+            color:#cbd5e1;
+        }
+
+        /* --- Icon buttons --- */
+        QToolButton#btn_icon{
+            border:none;
+            border-radius:6px;
+            background:transparent;
+            padding:4px 6px;
+            font-size:14px;
+            color:#64748b;
+        }
+
+        QToolButton#btn_icon:hover{
+            background:#f1f5f9;
+            color:#0f172a;
+        }
+
+        QToolButton#btn_icon:disabled{
+            background:transparent;
+            color:#cbd5e1;
+        }
+
+        /* --- Buttons --- */
+        QPushButton{
+            min-height:28px;
+            border:1px solid #e3e8ef;
+            border-radius:6px;
+            background:white;
+            color:#0f172a;
+            text-align:center;
+            padding:0 12px;
+        }
+
+        QPushButton:hover{
+            background:#f8fafc;
+        }
+
+        QPushButton:pressed{
+            background:#f1f5f9;
+        }
+
+        QPushButton:disabled{
+            background:#f1f5f9;
+            border-color:#e3e8ef;
+            color:#94a3b8;
+        }
+
+        QPushButton:focus{
+            border:1px solid #2563eb;
+        }
+
+        QPushButton#btn_primary{
+            background:#2563eb;
+            border:1px solid #2563eb;
+            color:white;
+            font-weight:600;
+        }
+
+        QPushButton#btn_primary:hover{
+            background:#1d4ed8;
+            border-color:#1d4ed8;
+        }
+
+        QPushButton#btn_primary:pressed{
+            background:#1e40af;
+        }
+
+        /* --- Checkbox --- */
+        QCheckBox{
+            font-size:13px;
+            color:#0f172a;
+            margin:0 6px;
+        }
+
+        QCheckBox::indicator{
+            width:16px;
+            height:16px;
+            border:1px solid #cbd5e1;
+            border-radius:4px;
+            background:white;
+        }
+
+        QCheckBox::indicator:hover{
+            border-color:#2563eb;
+        }
+
+        QCheckBox::indicator:checked{
+            background:#2563eb;
+            border-color:#2563eb;
+        }
+
+        /* --- Table headers --- */
+        QHeaderView::section{
+            background:#f8fafc;
+            border:none;
+            border-bottom:1px solid #e2e8f0;
+            border-right:1px solid #eef2f7;
             padding:6px 8px;
             font-size:12px;
             font-weight:600;
-            color:#57606a;
+            color:#475569;
         }
 
         QHeaderView::section:hover{
-            background:#eef1f4;
+            background:#eef2f7;
         }
 
+        /* --- Tabs --- */
         QTabWidget::pane{
-            border:1px solid #dfe6e9;
-            border-radius:8px;
+            border:1px solid #e3e8ef;
+            border-radius:10px;
             background:white;
             top:-1px;
         }
 
         QTabBar::tab{
             background:transparent;
-            padding:6px 16px;
-            color:#57606a;
+            padding:7px 16px;
+            color:#64748b;
+            border:none;
             border-bottom:2px solid transparent;
             font-size:13px;
         }
 
         QTabBar::tab:first{
-            margin-left:4px;
+            margin-left:6px;
         }
 
         QTabBar::tab:top{
@@ -621,17 +658,18 @@ class MainWindow(QWidget):
         }
 
         QTabBar::tab:selected{
-            color:#1976d2;
-            border-bottom:2px solid #1976d2;
+            color:#2563eb;
+            border-bottom:2px solid #2563eb;
             font-weight:600;
         }
 
         QTabBar::tab:hover:!selected{
-            color:#2d3436;
+            color:#0f172a;
         }
 
+        /* --- Progress (default) --- */
         QProgressBar{
-            border:1px solid #dfe6e9;
+            border:1px solid #e3e8ef;
             border-radius:5px;
             background:white;
             text-align:center;
@@ -639,34 +677,36 @@ class MainWindow(QWidget):
         }
 
         QProgressBar::chunk{
-            background:#1976d2;
+            background:#2563eb;
             border-radius:4px;
         }
 
+        /* --- Menu --- */
         QMenu{
             background:white;
-            border:1px solid #dfe6e9;
-            border-radius:6px;
+            border:1px solid #e3e8ef;
+            border-radius:8px;
             padding:6px;
         }
 
         QMenu::item{
-            padding:6px 24px;
-            border-radius:4px;
-            color:#2d3436;
+            padding:6px 22px;
+            border-radius:6px;
+            color:#0f172a;
         }
 
         QMenu::item:selected{
-            background:#e3f2fd;
-            color:#1565c0;
+            background:#eff6ff;
+            color:#1d4ed8;
         }
 
         QMenu::separator{
             height:1px;
-            background:#eef1f4;
+            background:#eef2f7;
             margin:4px 8px;
         }
 
+        /* --- Scrollbars --- */
         QScrollBar:vertical{
             background:transparent;
             width:10px;
@@ -674,13 +714,13 @@ class MainWindow(QWidget):
         }
 
         QScrollBar::handle:vertical{
-            background:#c4cdd5;
+            background:#cbd5e1;
             border-radius:4px;
             min-height:30px;
         }
 
         QScrollBar::handle:vertical:hover{
-            background:#a5b0ba;
+            background:#94a3b8;
         }
 
         QScrollBar::add-line:vertical,
@@ -695,13 +735,13 @@ class MainWindow(QWidget):
         }
 
         QScrollBar::handle:horizontal{
-            background:#c4cdd5;
+            background:#cbd5e1;
             border-radius:4px;
             min-width:30px;
         }
 
         QScrollBar::handle:horizontal:hover{
-            background:#a5b0ba;
+            background:#94a3b8;
         }
 
         QScrollBar::add-line:horizontal,
@@ -718,8 +758,13 @@ class MainWindow(QWidget):
         """)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(14, 14, 14, 14)
-        root.setSpacing(10)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        content_widget = QWidget()
+        content = QVBoxLayout(content_widget)
+        content.setContentsMargins(8, 8, 8, 0)
+        content.setSpacing(6)
 
         self.toolbar = QToolBar()
 
@@ -767,13 +812,13 @@ class MainWindow(QWidget):
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.action_stop)
 
-        root.addWidget(self.toolbar)
+        content.addWidget(self.toolbar)
 
         status_bar = QFrame()
         status_bar.setObjectName("StatusBar")
 
         status_layout = QHBoxLayout(status_bar)
-        status_layout.setContentsMargins(12, 4, 12, 4)
+        status_layout.setContentsMargins(12, 3, 12, 3)
         status_layout.setSpacing(6)
 
         self.lbl_status = QLabel("Status:")
@@ -795,7 +840,7 @@ class MainWindow(QWidget):
             self.lbl_sql,
         ):
             label.setStyleSheet(
-                "color:#8b949e;font-size:12px;border:none;"
+                "color:#94a3b8;font-size:12px;border:none;"
                 "background:transparent;"
             )
 
@@ -806,7 +851,7 @@ class MainWindow(QWidget):
             self.lbl_sql_status,
         ):
             label.setStyleSheet(
-                "color:#ffffff;font-size:12px;font-weight:600;"
+                "color:#f8fafc;font-size:12px;font-weight:600;"
                 "border:none;background:transparent;"
             )
 
@@ -844,6 +889,8 @@ class MainWindow(QWidget):
         server_frame = QFrame()
         server_frame.setMinimumWidth(200)
         server_layout = QVBoxLayout(server_frame)
+        server_layout.setContentsMargins(8, 8, 8, 8)
+        server_layout.setSpacing(8)
 
         self.lbl_servers_title = QLabel("Servers — Selected: 0")
         self.lbl_servers_title.setObjectName("SectionTitle")
@@ -888,10 +935,13 @@ class MainWindow(QWidget):
         right_container = QWidget()
 
         right = QVBoxLayout(right_container)
+        right.setContentsMargins(0, 0, 0, 0)
+        right.setSpacing(0)
+
         table_frame = QFrame()
 
         table_layout = QVBoxLayout(table_frame)
-        table_layout.setContentsMargins(10, 10, 10, 10)
+        table_layout.setContentsMargins(8, 8, 8, 8)
         table_layout.setSpacing(8)
 
         self.lbl_results = QLabel("Results")
@@ -1066,7 +1116,7 @@ class MainWindow(QWidget):
         log_frame = QFrame()
 
         log_layout = QVBoxLayout(log_frame)
-        log_layout.setContentsMargins(10, 10, 10, 10)
+        log_layout.setContentsMargins(8, 8, 8, 8)
         log_layout.setSpacing(8)
 
         top = QHBoxLayout()
@@ -1110,7 +1160,7 @@ class MainWindow(QWidget):
         queries_frame = QFrame()
 
         queries_layout = QVBoxLayout(queries_frame)
-        queries_layout.setContentsMargins(10, 10, 10, 10)
+        queries_layout.setContentsMargins(8, 8, 8, 8)
         queries_layout.setSpacing(8)
 
         qtop = QHBoxLayout()
@@ -1154,7 +1204,7 @@ class MainWindow(QWidget):
             "Placeholders: {db} {dbq} {table} {country} {target}"
         )
         hint.setStyleSheet(
-            "color:#7f8c8d;font-size:12px;"
+            "color:#94a3b8;font-size:12px;"
         )
 
         queries_layout.addWidget(hint)
@@ -1179,7 +1229,7 @@ class MainWindow(QWidget):
         sql_console_frame = QFrame()
 
         sql_console_layout = QVBoxLayout(sql_console_frame)
-        sql_console_layout.setContentsMargins(10, 10, 10, 10)
+        sql_console_layout.setContentsMargins(8, 8, 8, 8)
         sql_console_layout.setSpacing(8)
 
         sctop = QHBoxLayout()
@@ -1359,7 +1409,9 @@ class MainWindow(QWidget):
         body_splitter.addWidget(right_container)
         body_splitter.setSizes([300, 900])
 
-        root.addWidget(body_splitter)
+        content.addWidget(body_splitter)
+
+        root.addWidget(content_widget, 1)
 
         root.addWidget(status_bar)
 
@@ -1452,17 +1504,17 @@ class MainWindow(QWidget):
 
                 if status == "OK":
                     item.setForeground(
-                        QBrush(QColor("#2e7d32"))
+                        QBrush(QColor("#16a34a"))
                     )
 
                 elif status == "WARNING":
                     item.setForeground(
-                        QBrush(QColor("#ef6c00"))
+                        QBrush(QColor("#d97706"))
                     )
 
                 elif status == "ERROR":
                     item.setForeground(
-                        QBrush(QColor("#c62828"))
+                        QBrush(QColor("#dc2626"))
                     )
 
             self.table.setItem(
@@ -1575,20 +1627,20 @@ class MainWindow(QWidget):
     def append_log(self, level: str, message: str):
 
         colors = {
-            "INFO": "#1565c0",
-            "SUCCESS": "#2e7d32",
-            "WARNING": "#ef6c00",
-            "ERROR": "#c62828",
+            "INFO": "#2563eb",
+            "SUCCESS": "#16a34a",
+            "WARNING": "#d97706",
+            "ERROR": "#dc2626",
         }
 
-        color = colors.get(level.upper(), "#212121")
+        color = colors.get(level.upper(), "#0f172a")
 
         stamp = datetime.now().strftime(
             "%Y-%m-%d %H:%M:%S"
         )
 
         self.log.append(
-            f'<span style="color:#7f8c8d;">{stamp}</span> '
+            f'<span style="color:#94a3b8;">{stamp}</span> '
             f'<span style="color:{color};"><b>[{level.upper()}]</b></span> '
             f'{message}'
         )
