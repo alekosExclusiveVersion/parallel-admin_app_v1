@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QListWidgetItem,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -1008,6 +1009,48 @@ class MainWindow(QWidget):
 
         sql_console_layout.addLayout(search_row)
 
+        self.search_results_box = QFrame()
+        self.search_results_box.setObjectName("TabsBlock")
+        search_results_box_layout = QVBoxLayout(
+            self.search_results_box
+        )
+        search_results_box_layout.setContentsMargins(6, 6, 6, 6)
+        search_results_box_layout.setSpacing(6)
+
+        srtop = QHBoxLayout()
+
+        self.lbl_search_results = QLabel("Result")
+        self.lbl_search_results.setObjectName("SectionTitle")
+        srtop.addWidget(self.lbl_search_results)
+
+        srtop.addStretch()
+
+        self.btn_search_results_clear = QToolButton()
+        self.btn_search_results_clear.setObjectName("btn_icon")
+        self.btn_search_results_clear.setIcon(icon("delete_outline"))
+        self.btn_search_results_clear.setIconSize(QSize(16, 16))
+        self.btn_search_results_clear.setToolTip(
+            "Очистить результаты поиска БД"
+        )
+
+        srtop.addWidget(self.btn_search_results_clear)
+
+        search_results_box_layout.addLayout(srtop)
+
+        self.search_results_list = QListWidget()
+        self.search_results_list.setSelectionMode(
+            QAbstractItemView.SingleSelection
+        )
+        self.search_results_list.setMaximumHeight(200)
+        self.search_results_list.setToolTip(
+            "Результаты поиска БД. Двойной клик подставит "
+            "сервер и базу данных в поля консоли"
+        )
+
+        search_results_box_layout.addWidget(self.search_results_list)
+
+        sql_console_layout.addWidget(self.search_results_box)
+
         self.sql_editor = QPlainTextEdit()
         self.sql_editor.setLineWrapMode(
             QPlainTextEdit.NoWrap
@@ -1126,6 +1169,14 @@ class MainWindow(QWidget):
 
         self.ed_search_mask.returnPressed.connect(
             self._search_run
+        )
+
+        self.search_results_list.itemDoubleClicked.connect(
+            self._search_result_apply
+        )
+
+        self.btn_search_results_clear.clicked.connect(
+            self._search_results_clear
         )
 
         self.chk_all_servers.toggled.connect(
@@ -1811,17 +1862,9 @@ class MainWindow(QWidget):
             self.lbl_sql_status.setText("No servers to search.")
             return
 
-        # Очистка таблицы без установки 7 колонок (как в clear_results),
-        # чтобы поиск мог задать собственные заголовки.
-        self.table.clear()
-        self.table.setRowCount(0)
-        self.table.setColumnCount(0)
-
-        self._results_source = "search"
+        self.search_results_list.clear()
 
         self._update_only_errors_visibility()
-
-        self.table.setSortingEnabled(False)
 
         self.progress.setValue(0)
 
@@ -1856,12 +1899,6 @@ class MainWindow(QWidget):
         self.btn_search.setEnabled(True)
         self.btn_search_stop.setEnabled(False)
 
-        self.table.setSortingEnabled(True)
-
-        self._repopulate_filter_column()
-
-        self._filter_results()
-
         self._search_busy(False)
 
     def _search_result(self, server, database):
@@ -1877,24 +1914,36 @@ class MainWindow(QWidget):
 
     def _append_search_result(self, server, database):
 
-        table = self.table
+        item = QListWidgetItem(f"{server} — {database}")
+        item.setData(Qt.UserRole, (server, database))
+        item.setToolTip(
+            f"{server} — {database}\n"
+            "Двойной клик подставит сервер и базу в консоль"
+        )
 
-        if table.columnCount() == 0:
-            labels = ["Source", "Server", "Database"]
-            table.setColumnCount(len(labels))
-            table.setHorizontalHeaderLabels(labels)
+        self.search_results_list.addItem(item)
+        self.search_results_list.scrollToBottom()
 
-            header = table.horizontalHeader()
-            header.setSectionResizeMode(QHeaderView.Interactive)
-            header.setStretchLastSection(True)
+    def _search_results_clear(self):
 
-            for index, width in ((0, 64), (1, 190), (2, 160)):
-                if index < len(labels):
-                    header.resizeSection(index, width)
+        self.search_results_list.clear()
 
-            self._repopulate_filter_column()
+    def _search_result_apply(self, item):
 
-        self._add_table_row(["SEARCH", server, database])
+        data = item.data(Qt.UserRole)
+
+        if not data:
+            return
+
+        server, database = data
+
+        self.cb_server.setCurrentText(server)
+        self.cb_database.setCurrentText(database)
+
+        self.append_log(
+            "SUCCESS",
+            f"Search result applied: [{server}.{database}]",
+        )
 
     def _search_busy(self, busy):
 
