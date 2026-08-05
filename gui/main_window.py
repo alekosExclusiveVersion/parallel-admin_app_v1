@@ -633,10 +633,6 @@ class MainWindow(QWidget):
         table_layout.setContentsMargins(8, 8, 8, 8)
         table_layout.setSpacing(8)
 
-        self.lbl_results = QLabel("Results")
-        self.lbl_results.setObjectName("SectionTitle")
-        table_layout.addWidget(self.lbl_results)
-
         filter_layout = QHBoxLayout()
 
         self.lbl_column = QLabel("Колонка:")
@@ -760,10 +756,6 @@ class MainWindow(QWidget):
         log_layout.setSpacing(8)
 
         top = QHBoxLayout()
-
-        self.lbl_log = QLabel("Log")
-        self.lbl_log.setObjectName("SectionTitle")
-        top.addWidget(self.lbl_log)
 
         top.addStretch()
 
@@ -1035,7 +1027,7 @@ class MainWindow(QWidget):
 
         tabs = QTabWidget()
         tabs.addTab(table_frame, "Results")
-        tabs.addTab(log_frame, "Log")
+        tabs.addTab(log_frame, "Logs")
         tabs.addTab(queries_frame, "Queries")
 
         tabs_frame = QFrame()
