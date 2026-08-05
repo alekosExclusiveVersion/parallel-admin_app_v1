@@ -665,18 +665,10 @@ class MainWindow(QWidget):
 
         servers_top.addStretch()
 
-        self.btn_hide_servers = QToolButton()
-        self.btn_hide_servers.setObjectName("btn_icon")
-        self.btn_hide_servers.setIcon(icon("close"))
-        self.btn_hide_servers.setIconSize(QSize(16, 16))
-        self.btn_hide_servers.setToolTip("Hide server list")
-
-        servers_top.addWidget(self.btn_hide_servers)
-
         server_layout.addLayout(servers_top)
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search server...")
+        self.search.setPlaceholderText("Search server, DB, table…")
         server_layout.addWidget(self.search)
 
         buttons = QHBoxLayout()
@@ -1171,16 +1163,6 @@ class MainWindow(QWidget):
         self.tabs_frame_layout.setContentsMargins(0, 0, 0, 0)
         self.tabs_frame_layout.setSpacing(0)
 
-        self.btn_hide_tabs = QToolButton()
-        self.btn_hide_tabs.setObjectName("btn_icon")
-        self.btn_hide_tabs.setIcon(icon("close"))
-        self.btn_hide_tabs.setIconSize(QSize(16, 16))
-        self.btn_hide_tabs.setToolTip("Hide results block")
-        tabs.setCornerWidget(
-            self.btn_hide_tabs,
-            Qt.TopRightCorner,
-        )
-
         self.tabs_frame_layout.addWidget(tabs)
 
         self.right_splitter = QSplitter(Qt.Vertical)
@@ -1218,14 +1200,6 @@ class MainWindow(QWidget):
 
         self.btn_invert.clicked.connect(
             self._invert_selection
-        )
-
-        self.btn_hide_servers.clicked.connect(
-            lambda: self.action_toggle_servers.setChecked(False)
-        )
-
-        self.btn_hide_tabs.clicked.connect(
-            lambda: self.action_toggle_results.setChecked(False)
         )
 
         self.search.textChanged.connect(
@@ -1394,11 +1368,32 @@ class MainWindow(QWidget):
         text = text.lower().strip()
 
         for index in range(self.server_list.topLevelItemCount()):
-            item = self.server_list.topLevelItem(index)
-
-            item.setHidden(
-                text not in item.text(0).lower()
+            self._filter_tree_item(
+                self.server_list.topLevelItem(index), text
             )
+
+    def _filter_tree_item(self, item: QTreeWidgetItem, text: str):
+        """Рекурсивно показывает/скрывает узлы дерева по вхождению text."""
+        if not text:
+            item.setHidden(False)
+            for i in range(item.childCount()):
+                child = item.child(i)
+                child.setHidden(False)
+                self._filter_tree_item(child, "")
+            return
+
+        # Ищем вхождение в самом узле или любом из потомков
+        self_match = text in item.text(0).lower()
+        child_match = False
+
+        for i in range(item.childCount()):
+            child = item.child(i)
+            if self._filter_tree_item(child, text):
+                child_match = True
+
+        visible = self_match or child_match
+        item.setHidden(not visible)
+        return visible
 
     # ----------------------------------------------------------
     # Server tree (раскрывающийся список серверов/БД/таблиц)
