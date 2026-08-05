@@ -1055,6 +1055,7 @@ class MainWindow(QWidget):
 
         self.lbl_search_hint = QLabel(
             "Результаты — в блоке Results. "
+            "Блок автоматически разворачивается при поступлении новых данных. "
             "Двойной клик подставит сервер и БД в консоль"
         )
         self.lbl_search_hint.setStyleSheet(
@@ -1373,6 +1374,9 @@ class MainWindow(QWidget):
                     widget_item.setBackground(self._ERROR_BG)
 
         self._filter_timer.start()
+        # Авто-показ блока Results при добавлении строки
+        if not self.action_toggle_results.isChecked():
+            self.action_toggle_results.setChecked(True)
 
     def add_result(
         self,
