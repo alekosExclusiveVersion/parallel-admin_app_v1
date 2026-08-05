@@ -19,20 +19,7 @@ from common.config import config
 from common.logger import logger
 from common.mysql_client import mysql
 from common.worker import worker_pool
-
-
-def load_servers() -> list[str]:
-    servers_file = Path(__file__).parent / "servers.txt"
-
-    if not servers_file.exists():
-        raise FileNotFoundError(f"Не найден файл: {servers_file}")
-
-    with servers_file.open(encoding="utf-8") as f:
-        return [
-            line.strip()
-            for line in f
-            if line.strip() and not line.startswith("#")
-        ]
+from backend.repository import Repository
 
 
 def process_server(server: str):
@@ -105,7 +92,7 @@ def save_csv(data: list[dict]) -> None:
 
 def main():
 
-    servers = load_servers()
+    servers = Repository().load_servers()
 
     logger.info(f"Серверов: {len(servers)}")
 

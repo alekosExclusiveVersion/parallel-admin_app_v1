@@ -5,6 +5,8 @@ backend/query_worker.py
 для SQL Console.
 """
 
+from __future__ import annotations
+
 import time
 
 from PySide6.QtCore import QObject, Signal, Slot
@@ -63,19 +65,55 @@ class QueryWorker(QObject):
     def stop(self):
         self._stop = True
 
+    @staticmethod
+    def _execute_sql(
+        host: str,
+        database: str | None,
+        sql: str,
+        row_limit: int,
+    ) -> tuple[list[list[str]], list[str], str]:
+        """Выполняет SQL и возвращает (rows, columns, message)."""
+        started_at = time.perf_counter()
+
+        with mysql.connect(host, database) as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+
+                if cur.description is not None:
+                    columns = [d[0] for d in cur.description]
+                    rows = list(cur.fetchmany(row_limit + 1))
+                    truncated = len(rows) > row_limit
+                    rows = rows[:row_limit]
+
+                    rows = [
+                        [str(value) for value in row.values()]
+                        for row in rows
+                    ]
+
+                    total = f">{row_limit}" if truncated else str(len(rows))
+                    message = (
+                        f"{len(rows)} row(s) of {total} "
+                        f"({time.perf_counter() - started_at:.2f} s)"
+                    )
+                else:
+                    columns = []
+                    rows = []
+                    message = (
+                        f"{cur.rowcount} row(s) affected "
+                        f"({time.perf_counter() - started_at:.2f} s)"
+                    )
+
+        return rows, columns, message
+
     @Slot()
     def run(self):
 
         self.started.emit()
 
         if self._mode == "databases":
-
             try:
-
                 names = mysql.list_databases(self._host)
-
             except Exception as ex:
-
                 self.error.emit(str(ex))
                 self.finished.emit()
                 return
@@ -85,72 +123,16 @@ class QueryWorker(QObject):
             return
 
         if self._mode == "multi":
-
             self._run_multi()
             return
 
         self.query.emit(self._sql)
 
-        started_at = time.perf_counter()
-
         try:
-
-            with mysql.connect(
-                self._host,
-                self._database,
-            ) as conn:
-
-                with conn.cursor() as cur:
-
-                    cur.execute(self._sql)
-
-                    if cur.description is not None:
-
-                        columns = [
-                            d[0] for d in cur.description
-                        ]
-
-                        rows = cur.fetchmany(
-                            self._row_limit + 1
-                        )
-
-                        truncated = (
-                            len(rows) > self._row_limit
-                        )
-
-                        rows = rows[:self._row_limit]
-
-                        rows = [
-                            [
-                                str(value)
-                                for value in row.values()
-                            ]
-                            for row in rows
-                        ]
-
-                        total = (
-                            f">{self._row_limit}"
-                            if truncated
-                            else str(len(rows))
-                        )
-
-                        message = (
-                            f"{len(rows)} row(s) of {total} "
-                            f"({time.perf_counter() - started_at:.2f} s)"
-                        )
-
-                    else:
-
-                        columns = []
-                        rows = []
-
-                        message = (
-                            f"{cur.rowcount} row(s) affected "
-                            f"({time.perf_counter() - started_at:.2f} s)"
-                        )
-
+            rows, columns, message = self._execute_sql(
+                self._host, self._database, self._sql, self._row_limit,
+            )
         except Exception as ex:
-
             self.error.emit(str(ex))
             self.finished.emit()
             return
@@ -168,27 +150,15 @@ class QueryWorker(QObject):
                 break
 
             if database == ALL_DATABASES:
-
                 try:
-
                     names = mysql.list_databases(host)
-
                 except Exception as ex:
-
-                    self.error_target.emit(
-                        host,
-                        "",
-                        str(ex),
-                    )
+                    self.error_target.emit(host, "", str(ex))
                     done += 1
                     continue
 
-                targets = [
-                    (host, name) for name in names
-                ]
-
+                targets = [(host, name) for name in names]
             else:
-
                 targets = [(host, database)]
 
             for host_name, db_name in targets:
@@ -205,71 +175,12 @@ class QueryWorker(QObject):
 
                 self.query.emit(self._sql)
 
-                started_at = time.perf_counter()
-
                 try:
-
-                    with mysql.connect(
-                        host_name,
-                        db_name,
-                    ) as conn:
-
-                        with conn.cursor() as cur:
-
-                            cur.execute(self._sql)
-
-                            if cur.description is not None:
-
-                                columns = [
-                                    d[0] for d in cur.description
-                                ]
-
-                                rows = cur.fetchmany(
-                                    self._row_limit + 1
-                                )
-
-                                truncated = (
-                                    len(rows) > self._row_limit
-                                )
-
-                                rows = rows[:self._row_limit]
-
-                                rows = [
-                                    [
-                                        str(value)
-                                        for value in row.values()
-                                    ]
-                                    for row in rows
-                                ]
-
-                                total = (
-                                    f">{self._row_limit}"
-                                    if truncated
-                                    else str(len(rows))
-                                )
-
-                                message = (
-                                    f"{len(rows)} row(s) of {total} "
-                                    f"({time.perf_counter() - started_at:.2f} s)"
-                                )
-
-                            else:
-
-                                columns = []
-                                rows = []
-
-                                message = (
-                                    f"{cur.rowcount} row(s) affected "
-                                    f"({time.perf_counter() - started_at:.2f} s)"
-                                )
-
-                except Exception as ex:
-
-                    self.error_target.emit(
-                        host_name,
-                        db_name,
-                        str(ex),
+                    rows, columns, message = self._execute_sql(
+                        host_name, db_name, self._sql, self._row_limit,
                     )
+                except Exception as ex:
+                    self.error_target.emit(host_name, db_name, str(ex))
                     continue
 
                 done += 1

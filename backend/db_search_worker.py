@@ -5,6 +5,8 @@ backend/db_search_worker.py
 Выполняется в фоновом QThread, чтобы не блокировать GUI.
 """
 
+from __future__ import annotations
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from PySide6.QtCore import QObject, Signal, Slot

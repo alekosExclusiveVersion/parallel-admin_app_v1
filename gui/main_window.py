@@ -1,39 +1,29 @@
+from __future__ import annotations
+
 import csv
 import re
 import time
 from datetime import datetime
-from PySide6.QtCore import QTimer
-from backend.repository import Repository
-from backend.check_worker import CheckWorker
-from backend.query_worker import ALL_DATABASES, QueryWorker
-from backend.db_search_worker import DatabaseSearchWorker
-from common.sql_builder import sql_builder
-from common.version import APP_VERSION
-from gui.icons import icon
+
 from PySide6.QtCore import (
     Qt,
     QSize,
     QThread,
+    QTimer,
 )
 from PySide6.QtGui import (
     QAction,
     QColor,
     QBrush,
-    QFont,
     QFontDatabase,
-    QIcon,
     QKeySequence,
-    QPainter,
-    QPixmap,
     QShortcut,
     QTextCursor,
 )
-
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
-    QGridLayout,
     QLabel,
     QListWidget,
     QTableWidget,
@@ -59,7 +49,15 @@ from PySide6.QtWidgets import (
     QTabWidget,
 )
 
+from backend.repository import Repository
+from backend.check_worker import CheckWorker
+from backend.query_worker import ALL_DATABASES, QueryWorker
+from backend.db_search_worker import DatabaseSearchWorker
+from common.sql_builder import sql_builder
+from common.version import APP_VERSION
+from gui.icons import icon
 from gui.sql_highlighter import SQLHighlighter
+from gui.styles import SHARED_STYLESHEET
 
 
 class ComboItemDelegate(QStyledItemDelegate):
@@ -440,429 +438,7 @@ class MainWindow(QWidget):
     def _build_ui(self):
         self.setObjectName("MainWindow")
 
-        self.setStyleSheet("""
-        QWidget#MainWindow{
-            background:#f4f6f8;
-        }
-
-        QLabel{
-            color:#0f172a;
-            background:transparent;
-            border:none;
-        }
-
-        QLabel#SectionTitle{
-            font-size:13px;
-            font-weight:600;
-            color:#334155;
-            border:none;
-            background:transparent;
-        }
-
-        QFrame{
-            background:white;
-            border:1px solid #e3e8ef;
-            border-radius:10px;
-        }
-
-        QSplitter{
-            background:transparent;
-            border:none;
-            border-radius:0;
-        }
-
-        QSplitter::handle{
-            background:transparent;
-        }
-
-        /* --- Status bar (full-bleed) --- */
-        QFrame#StatusBar{
-            background:#0f172a;
-            border:none;
-            border-radius:0;
-        }
-
-        QFrame#StatusBar QLabel{
-            border:none;
-            background:transparent;
-        }
-
-        QFrame#StatusBar QProgressBar{
-            background:rgba(255,255,255,0.12);
-            border:none;
-            border-radius:4px;
-            min-height:6px;
-            max-height:6px;
-            text-align:center;
-        }
-
-        QFrame#StatusBar QProgressBar::chunk{
-            background:#3b82f6;
-            border-radius:4px;
-        }
-
-        /* --- Inputs --- */
-        QListWidget,
-        QTextEdit,
-        QPlainTextEdit,
-        QTableWidget,
-        QLineEdit,
-        QComboBox,
-        QAbstractSpinBox{
-            background:white;
-            border:1px solid #e3e8ef;
-            border-radius:6px;
-            color:#0f172a;
-            font-size:13px;
-            padding:4px;
-            selection-background-color:#eff6ff;
-            selection-color:#0f172a;
-        }
-
-        QListWidget:focus,
-        QTextEdit:focus,
-        QPlainTextEdit:focus,
-        QLineEdit:focus,
-        QComboBox:focus{
-            border:1px solid #2563eb;
-        }
-
-        QComboBox{
-            padding:4px 28px 4px 10px;
-        }
-
-        QComboBox QAbstractItemView{
-            background:white;
-            border:1px solid #e3e8ef;
-            border-radius:8px;
-            outline:none;
-            padding:6px;
-            selection-background-color:#eff6ff;
-            selection-color:#0f172a;
-        }
-
-        QComboBox QAbstractItemView::item{
-            border:none;
-            border-radius:6px;
-        }
-
-        QComboBox QAbstractItemView::item:hover{
-            background:#f1f5f9;
-        }
-
-        QComboBox QFrame{
-            background:white;
-            border:none;
-            border-radius:0;
-        }
-
-        /* --- Toolbar --- */
-        QToolBar{
-            background:white;
-            border:1px solid #e3e8ef;
-            border-radius:10px;
-            padding:4px;
-            spacing:4px;
-        }
-
-        QToolBar::separator{
-            width:1px;
-            background:#e2e8f0;
-            margin:4px 2px;
-        }
-
-        QToolBar QToolButton{
-            border:none;
-            border-radius:6px;
-            background:transparent;
-            padding:6px;
-            color:#64748b;
-        }
-
-        QToolBar QToolButton:hover{
-            background:#f1f5f9;
-            color:#0f172a;
-        }
-
-        QToolBar QToolButton:pressed{
-            background:#e2e8f0;
-        }
-
-        QToolBar QToolButton:disabled{
-            color:#cbd5e1;
-        }
-
-        /* --- Icon buttons --- */
-        QToolButton#btn_icon{
-            border:none;
-            border-radius:6px;
-            background:transparent;
-            padding:4px 6px;
-            color:#475569;
-        }
-
-        QToolButton#btn_icon:hover{
-            background:#eff6ff;
-            color:#2563eb;
-        }
-
-        QToolButton#btn_icon:disabled{
-            background:transparent;
-            color:#cbd5e1;
-        }
-
-        /* --- Buttons --- */
-        QPushButton{
-            min-height:28px;
-            border:1px solid #2563eb;
-            border-radius:6px;
-            background:white;
-            color:#2563eb;
-            font-weight:600;
-            font-size:13px;
-            text-align:center;
-            padding:0 12px;
-        }
-
-        QPushButton:hover{
-            background:#eff6ff;
-            border-color:#1d4ed8;
-            color:#1d4ed8;
-        }
-
-        QPushButton:pressed{
-            background:#dbeafe;
-            border-color:#1e40af;
-            color:#1e40af;
-        }
-
-        QPushButton:disabled{
-            background:#f1f5f9;
-            border-color:#cbd5e1;
-            color:#94a3b8;
-        }
-
-        QPushButton:focus{
-            border:1px solid #2563eb;
-        }
-
-        QPushButton#btn_primary{
-            background:#2563eb;
-            border:1px solid #2563eb;
-            color:white;
-            font-weight:600;
-        }
-
-        QPushButton#btn_primary:hover{
-            background:#1d4ed8;
-            border-color:#1d4ed8;
-            color:white;
-        }
-
-        QPushButton#btn_primary:pressed{
-            background:#1e40af;
-            color:white;
-        }
-
-        QPushButton#btn_danger{
-            background:white;
-            border:1px solid #dc2626;
-            color:#dc2626;
-            font-weight:600;
-        }
-
-        QPushButton#btn_danger:hover{
-            background:#fef2f2;
-            border-color:#b91c1c;
-            color:#b91c1c;
-        }
-
-        QPushButton#btn_danger:pressed{
-            background:#fee2e2;
-            border-color:#991b1b;
-            color:#991b1b;
-        }
-
-        QPushButton#btn_danger:disabled{
-            background:#f1f5f9;
-            border-color:#cbd5e1;
-            color:#94a3b8;
-        }
-
-        /* --- Checkbox --- */
-        QCheckBox{
-            font-size:13px;
-            color:#0f172a;
-            margin:0 6px;
-        }
-
-        QCheckBox::indicator{
-            width:16px;
-            height:16px;
-            border:1px solid #cbd5e1;
-            border-radius:4px;
-            background:white;
-        }
-
-        QCheckBox::indicator:hover{
-            border-color:#2563eb;
-        }
-
-        QCheckBox::indicator:checked{
-            background:#2563eb;
-            border-color:#2563eb;
-        }
-
-        /* --- Table headers --- */
-        QHeaderView::section{
-            background:#f8fafc;
-            border:none;
-            border-bottom:1px solid #e2e8f0;
-            border-right:1px solid #eef2f7;
-            padding:6px 8px;
-            font-size:12px;
-            font-weight:600;
-            color:#475569;
-        }
-
-        QHeaderView::section:hover{
-            background:#eef2f7;
-        }
-
-        /* --- Tabs --- */
-        QTabWidget::pane{
-            border:none;
-            border-radius:0;
-            background:white;
-        }
-
-        QStackedWidget{
-            border:none;
-            border-radius:0;
-            background:white;
-        }
-
-        QFrame#TabPage{
-            border:none;
-            border-radius:0;
-        }
-
-        QTabBar::tab{
-            background:transparent;
-            padding:7px 16px;
-            color:#64748b;
-            border:none;
-            border-bottom:2px solid transparent;
-            font-size:13px;
-        }
-
-        QTabBar::tab:first{
-            margin-left:6px;
-        }
-
-        QTabBar::tab:top{
-            margin-top:4px;
-        }
-
-        QTabBar::tab:selected{
-            color:#2563eb;
-            border-bottom:2px solid #2563eb;
-            font-weight:600;
-        }
-
-        QTabBar::tab:hover:!selected{
-            color:#0f172a;
-        }
-
-        /* --- Progress (default) --- */
-        QProgressBar{
-            border:1px solid #e3e8ef;
-            border-radius:5px;
-            background:white;
-            text-align:center;
-            min-height:20px;
-        }
-
-        QProgressBar::chunk{
-            background:#2563eb;
-            border-radius:4px;
-        }
-
-        /* --- Menu --- */
-        QMenu{
-            background:white;
-            border:1px solid #e3e8ef;
-            border-radius:8px;
-            padding:6px;
-        }
-
-        QMenu::item{
-            padding:6px 22px;
-            border-radius:6px;
-            color:#0f172a;
-        }
-
-        QMenu::item:selected{
-            background:#eff6ff;
-            color:#1d4ed8;
-        }
-
-        QMenu::separator{
-            height:1px;
-            background:#eef2f7;
-            margin:4px 8px;
-        }
-
-        /* --- Scrollbars --- */
-        QScrollBar:vertical{
-            background:transparent;
-            width:10px;
-            margin:2px;
-        }
-
-        QScrollBar::handle:vertical{
-            background:#cbd5e1;
-            border-radius:4px;
-            min-height:30px;
-        }
-
-        QScrollBar::handle:vertical:hover{
-            background:#94a3b8;
-        }
-
-        QScrollBar::add-line:vertical,
-        QScrollBar::sub-line:vertical{
-            height:0;
-        }
-
-        QScrollBar:horizontal{
-            background:transparent;
-            height:10px;
-            margin:2px;
-        }
-
-        QScrollBar::handle:horizontal{
-            background:#cbd5e1;
-            border-radius:4px;
-            min-width:30px;
-        }
-
-        QScrollBar::handle:horizontal:hover{
-            background:#94a3b8;
-        }
-
-        QScrollBar::add-line:horizontal,
-        QScrollBar::sub-line:horizontal{
-            width:0;
-        }
-
-        QScrollBar::add-page:vertical,
-        QScrollBar::sub-page:vertical,
-        QScrollBar::add-page:horizontal,
-        QScrollBar::sub-page:horizontal{
-            background:transparent;
-        }
-        """)
+        self.setStyleSheet(SHARED_STYLESHEET)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -1661,6 +1237,48 @@ class MainWindow(QWidget):
     # ResultTable
     # ----------------------------------------------------------
 
+    _STATUS_COLORS = {
+        "OK": QColor("#16a34a"),
+        "WARNING": QColor("#d97706"),
+        "ERROR": QColor("#dc2626"),
+    }
+    _ERROR_BG = QColor(255, 245, 245)
+
+    def _add_table_row(self, values: list[str], status_col: int | None = None):
+        """Вставляет строку в self.table и применяет раскраску статуса."""
+        table = self.table
+        row = table.rowCount()
+        table.insertRow(row)
+
+        col_count = table.columnCount()
+
+        # Выравнивание количества значений
+        padded = list(values)
+        if len(padded) > col_count:
+            padded = padded[:col_count]
+        else:
+            padded += [""] * (col_count - len(padded))
+
+        for col, text in enumerate(padded):
+            item = QTableWidgetItem(str(text))
+            item.setToolTip(str(text))
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+
+            if status_col is not None and col == status_col:
+                fg = self._STATUS_COLORS.get(text)
+                if fg:
+                    item.setForeground(QBrush(fg))
+
+            table.setItem(row, col, item)
+
+        # Подсветка фона для строк с ошибкой
+        if status_col is not None and padded[status_col] == "ERROR":
+            for col in range(col_count):
+                if (widget_item := table.item(row, col)):
+                    widget_item.setBackground(self._ERROR_BG)
+
+        self._filter_timer.start()
+
     def add_result(
         self,
         server,
@@ -1670,72 +1288,10 @@ class MainWindow(QWidget):
         status="OK",
         message="",
     ):
-
-        row = self.table.rowCount()
-
-        self.table.insertRow(row)
-
-        values = [
-            "Check",
-            server,
-            database,
-            country,
-            value,
-            status,
-            message,
-        ]
-
-        for column, text in enumerate(values):
-
-            item = QTableWidgetItem(str(text))
-
-            item.setToolTip(str(text))
-
-            item.setFlags(
-                item.flags() & ~Qt.ItemIsEditable
-            )
-
-            if column == 5:
-
-                if status == "OK":
-                    item.setForeground(
-                        QBrush(QColor("#16a34a"))
-                    )
-
-                elif status == "WARNING":
-                    item.setForeground(
-                        QBrush(QColor("#d97706"))
-                    )
-
-                elif status == "ERROR":
-                    item.setForeground(
-                        QBrush(QColor("#dc2626"))
-                    )
-
-            self.table.setItem(
-                row,
-                column,
-                item,
-            )
-        if status == "ERROR":
-
-            background = QColor(255, 245, 245)
-
-        else:
-
-            background = None
-
-
-        if background:
-
-            for column in range(self.table.columnCount()):
-
-                item = self.table.item(row, column)
-
-                if item:
-
-                    item.setBackground(background)
-        self._filter_timer.start()
+        self._add_table_row(
+            ["Check", server, database, country, value, status, message],
+            status_col=5,
+        )
 
     def clear_results(self):
 
@@ -2096,7 +1652,7 @@ class MainWindow(QWidget):
         message,
     ):
 
-        self._append_sql_result(
+        self._fill_sql_result(
             host,
             database,
             rows,
@@ -2115,7 +1671,7 @@ class MainWindow(QWidget):
             f"SQL [{host}.{database}]: {message}",
         )
 
-        self._append_sql_result(
+        self._fill_sql_result(
             host,
             database,
             [],
@@ -2134,23 +1690,6 @@ class MainWindow(QWidget):
         )
         self._sql_busy(False)
 
-    def _append_sql_result(
-        self,
-        host,
-        database,
-        rows,
-        columns,
-        message,
-    ):
-
-        self._fill_sql_result(
-            host,
-            database,
-            rows,
-            columns,
-            message,
-        )
-
     def _fill_sql_result(
         self,
         host,
@@ -2163,70 +1702,31 @@ class MainWindow(QWidget):
         table = self.table
 
         if table.columnCount() == 0:
-
-            if columns:
-                labels = ["Source", "Server", "Database"] + columns
-            else:
-                labels = ["Source", "Server", "Database", "Result"]
+            labels = (
+                ["Source", "Server", "Database"] + columns
+                if columns
+                else ["Source", "Server", "Database", "Result"]
+            )
 
             table.setColumnCount(len(labels))
             table.setHorizontalHeaderLabels(labels)
 
             header = table.horizontalHeader()
-
-            header.setSectionResizeMode(
-                QHeaderView.Interactive
-            )
-
+            header.setSectionResizeMode(QHeaderView.Interactive)
             header.setStretchLastSection(True)
 
-            fixed_widths = {
-                0: 64,
-                1: 190,
-                2: 160,
-            }
-
-            for index, width in fixed_widths.items():
+            for index, width in ((0, 64), (1, 190), (2, 160)):
                 if index < len(labels):
                     header.resizeSection(index, width)
 
             self._repopulate_filter_column()
 
-        base_row = table.rowCount()
-
         if not columns:
             rows = [[message]]
 
-        table.setRowCount(base_row + len(rows))
-
-        count = table.columnCount()
-
-        for r, row in enumerate(rows):
-
+        for row in rows:
             display = ["SQL", host, database] + row
-
-            if len(display) > count:
-                display = display[:count]
-
-            display += [""] * (count - len(display))
-
-            for c, value in enumerate(display):
-
-                item = QTableWidgetItem(str(value))
-
-                item.setToolTip(str(value))
-
-                item.setFlags(
-                    item.flags() & ~Qt.ItemIsEditable
-                )
-
-                table.setItem(
-                    base_row + r,
-                    c,
-                    item,
-                )
-
-        self._filter_timer.start()
+            self._add_table_row(display[:table.columnCount()])
 
     def _show_query_result(self, rows, columns, message):
 
@@ -2393,32 +1893,16 @@ class MainWindow(QWidget):
             table.setHorizontalHeaderLabels(labels)
 
             header = table.horizontalHeader()
-            header.setSectionResizeMode(
-                QHeaderView.Interactive
-            )
+            header.setSectionResizeMode(QHeaderView.Interactive)
             header.setStretchLastSection(True)
 
-            fixed_widths = {0: 64, 1: 190, 2: 160}
-            for index, width in fixed_widths.items():
+            for index, width in ((0, 64), (1, 190), (2, 160)):
                 if index < len(labels):
                     header.resizeSection(index, width)
 
             self._repopulate_filter_column()
 
-        base_row = table.rowCount()
-        table.setRowCount(base_row + 1)
-
-        display = ["SEARCH", server, database]
-
-        for c, value in enumerate(display):
-            item = QTableWidgetItem(str(value))
-            item.setToolTip(str(value))
-            item.setFlags(
-                item.flags() & ~Qt.ItemIsEditable
-            )
-            table.setItem(base_row, c, item)
-
-        self._filter_timer.start()
+        self._add_table_row(["SEARCH", server, database])
 
     def _search_busy(self, busy):
 
@@ -2459,19 +1943,16 @@ class MainWindow(QWidget):
         )
 
     def closeEvent(self, event):
+        self.worker.stop()
+        self.query_worker.stop()
+        self.search_worker.stop()
 
-        if self.thread.isRunning():
-            self.worker.stop()
-            self.thread.quit()
-            if not self.thread.wait(5000):
-                self.thread.terminate()
-                self.thread.wait()
-
-        if self.query_thread.isRunning():
-            self.query_thread.quit()
-            if not self.query_thread.wait(5000):
-                self.query_thread.terminate()
-                self.query_thread.wait()
+        for thr in (self.thread, self.query_thread, self.search_thread):
+            if thr.isRunning():
+                thr.quit()
+                if not thr.wait(5000):
+                    thr.terminate()
+                    thr.wait()
 
         event.accept()
     
