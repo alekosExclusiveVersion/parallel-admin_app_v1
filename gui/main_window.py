@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
-    QListWidgetItem,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -968,9 +967,56 @@ class MainWindow(QWidget):
 
         sql_console_layout.addLayout(scope_row)
 
+        self.sql_editor = QPlainTextEdit()
+        self.sql_editor.setLineWrapMode(
+            QPlainTextEdit.NoWrap
+        )
+        self.sql_editor.setPlaceholderText(
+            "Write SQL query... Ctrl+Enter to run"
+        )
+        self.sql_editor.setTabStopDistance(40)
+
+        console_font = QFontDatabase.systemFont(
+            QFontDatabase.FixedFont
+        )
+        console_font.setPointSize(12)
+        self.sql_editor.setFont(console_font)
+
+        sql_console_layout.addWidget(self.sql_editor)
+
+        # ----------------------------------------------------------
+        # Database Search Block UI (над SQL Console)
+        # ----------------------------------------------------------
+
+        search_frame = QFrame()
+        search_frame.setObjectName("TabsBlock")
+
+        search_layout = QVBoxLayout(search_frame)
+        search_layout.setContentsMargins(8, 8, 8, 8)
+        search_layout.setSpacing(6)
+
+        search_top = QHBoxLayout()
+
+        self.lbl_search_title = QLabel("Поиск БД")
+        self.lbl_search_title.setObjectName("SectionTitle")
+        search_top.addWidget(self.lbl_search_title)
+
+        search_top.addStretch()
+
+        self.lbl_search_hint = QLabel(
+            "Результаты — в блоке Results. "
+            "Двойной клик подставит сервер и БД в консоль"
+        )
+        self.lbl_search_hint.setStyleSheet(
+            "border:none;background:transparent;color:#64748b;"
+        )
+        search_top.addWidget(self.lbl_search_hint)
+
+        search_layout.addLayout(search_top)
+
         search_row = QHBoxLayout()
 
-        self.lbl_search = QLabel("Поиск БД:")
+        self.lbl_search = QLabel("Маска:")
         self.lbl_search.setStyleSheet(
             "border:none;background:transparent;color:#0f172a;"
         )
@@ -1007,66 +1053,7 @@ class MainWindow(QWidget):
         self.btn_search_stop.setEnabled(False)
         search_row.addWidget(self.btn_search_stop)
 
-        sql_console_layout.addLayout(search_row)
-
-        self.search_results_box = QFrame()
-        self.search_results_box.setObjectName("TabsBlock")
-        search_results_box_layout = QVBoxLayout(
-            self.search_results_box
-        )
-        search_results_box_layout.setContentsMargins(6, 6, 6, 6)
-        search_results_box_layout.setSpacing(6)
-
-        srtop = QHBoxLayout()
-
-        self.lbl_search_results = QLabel("Result")
-        self.lbl_search_results.setObjectName("SectionTitle")
-        srtop.addWidget(self.lbl_search_results)
-
-        srtop.addStretch()
-
-        self.btn_search_results_clear = QToolButton()
-        self.btn_search_results_clear.setObjectName("btn_icon")
-        self.btn_search_results_clear.setIcon(icon("delete_outline"))
-        self.btn_search_results_clear.setIconSize(QSize(16, 16))
-        self.btn_search_results_clear.setToolTip(
-            "Очистить результаты поиска БД"
-        )
-
-        srtop.addWidget(self.btn_search_results_clear)
-
-        search_results_box_layout.addLayout(srtop)
-
-        self.search_results_list = QListWidget()
-        self.search_results_list.setSelectionMode(
-            QAbstractItemView.SingleSelection
-        )
-        self.search_results_list.setMaximumHeight(200)
-        self.search_results_list.setToolTip(
-            "Результаты поиска БД. Двойной клик подставит "
-            "сервер и базу данных в поля консоли"
-        )
-
-        search_results_box_layout.addWidget(self.search_results_list)
-
-        sql_console_layout.addWidget(self.search_results_box)
-
-        self.sql_editor = QPlainTextEdit()
-        self.sql_editor.setLineWrapMode(
-            QPlainTextEdit.NoWrap
-        )
-        self.sql_editor.setPlaceholderText(
-            "Write SQL query... Ctrl+Enter to run"
-        )
-        self.sql_editor.setTabStopDistance(40)
-
-        console_font = QFontDatabase.systemFont(
-            QFontDatabase.FixedFont
-        )
-        console_font.setPointSize(12)
-        self.sql_editor.setFont(console_font)
-
-        sql_console_layout.addWidget(self.sql_editor)
+        search_layout.addLayout(search_row)
 
         tabs = QTabWidget()
         tabs.addTab(table_frame, "Results")
@@ -1081,9 +1068,10 @@ class MainWindow(QWidget):
         tabs_frame_layout.addWidget(tabs)
 
         right_splitter = QSplitter(Qt.Vertical)
+        right_splitter.addWidget(search_frame)
         right_splitter.addWidget(sql_console_frame)
         right_splitter.addWidget(tabs_frame)
-        right_splitter.setSizes([200, 600])
+        right_splitter.setSizes([90, 240, 560])
         right_splitter.setChildrenCollapsible(False)
         right_splitter.setHandleWidth(1)
         right.addWidget(right_splitter)
@@ -1169,14 +1157,6 @@ class MainWindow(QWidget):
 
         self.ed_search_mask.returnPressed.connect(
             self._search_run
-        )
-
-        self.search_results_list.itemDoubleClicked.connect(
-            self._search_result_apply
-        )
-
-        self.btn_search_results_clear.clicked.connect(
-            self._search_results_clear
         )
 
         self.chk_all_servers.toggled.connect(
@@ -1445,8 +1425,32 @@ class MainWindow(QWidget):
 
     def _table_double_click(self, item):
 
-        self._copy_row(
-            item.row()
+        server_index = self._column_index("Server")
+        database_index = self._column_index("Database")
+
+        if server_index is None or database_index is None:
+            return
+
+        row = item.row()
+
+        server_item = self.table.item(row, server_index)
+        database_item = self.table.item(row, database_index)
+
+        if not server_item or not database_item:
+            return
+
+        server = server_item.text().strip()
+        database = database_item.text().strip()
+
+        if not server or not database:
+            return
+
+        self.cb_server.setCurrentText(server)
+        self.cb_database.setCurrentText(database)
+
+        self.append_log(
+            "SUCCESS",
+            f"Result applied to console: [{server}.{database}]",
         )
 
     def _copy_row(self, row: int):
@@ -1862,9 +1866,17 @@ class MainWindow(QWidget):
             self.lbl_sql_status.setText("No servers to search.")
             return
 
-        self.search_results_list.clear()
+        # Поиск показывает результат в таблице Results с колонками
+        # Server и Database.
+        self.table.clear()
+        self.table.setRowCount(0)
+        self.table.setColumnCount(0)
+
+        self._results_source = "search"
 
         self._update_only_errors_visibility()
+
+        self.table.setSortingEnabled(False)
 
         self.progress.setValue(0)
 
@@ -1899,6 +1911,12 @@ class MainWindow(QWidget):
         self.btn_search.setEnabled(True)
         self.btn_search_stop.setEnabled(False)
 
+        self.table.setSortingEnabled(True)
+
+        self._repopulate_filter_column()
+
+        self._filter_results()
+
         self._search_busy(False)
 
     def _search_result(self, server, database):
@@ -1914,36 +1932,24 @@ class MainWindow(QWidget):
 
     def _append_search_result(self, server, database):
 
-        item = QListWidgetItem(f"{server} — {database}")
-        item.setData(Qt.UserRole, (server, database))
-        item.setToolTip(
-            f"{server} — {database}\n"
-            "Двойной клик подставит сервер и базу в консоль"
-        )
+        table = self.table
 
-        self.search_results_list.addItem(item)
-        self.search_results_list.scrollToBottom()
+        if table.columnCount() == 0:
+            labels = ["Server", "Database"]
+            table.setColumnCount(len(labels))
+            table.setHorizontalHeaderLabels(labels)
 
-    def _search_results_clear(self):
+            header = table.horizontalHeader()
+            header.setSectionResizeMode(QHeaderView.Interactive)
+            header.setStretchLastSection(True)
 
-        self.search_results_list.clear()
+            for index, width in ((0, 190), (1, 160)):
+                if index < len(labels):
+                    header.resizeSection(index, width)
 
-    def _search_result_apply(self, item):
+            self._repopulate_filter_column()
 
-        data = item.data(Qt.UserRole)
-
-        if not data:
-            return
-
-        server, database = data
-
-        self.cb_server.setCurrentText(server)
-        self.cb_database.setCurrentText(database)
-
-        self.append_log(
-            "SUCCESS",
-            f"Search result applied: [{server}.{database}]",
-        )
+        self._add_table_row([server, database])
 
     def _search_busy(self, busy):
 
