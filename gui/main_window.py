@@ -2378,7 +2378,8 @@ class MainWindow(QWidget):
             f"Log saved to {filename}",
         )
 
-    def closeEvent(self, event):
+    def shutdown(self):
+        """Останавливает все фоновые потоки (вызывается из App.closeEvent)."""
         self.worker.stop()
         self.query_worker.stop()
         self.search_worker.stop()
@@ -2396,6 +2397,8 @@ class MainWindow(QWidget):
                     thr.terminate()
                     thr.wait()
 
+    def closeEvent(self, event):
+        self.shutdown()
         event.accept()
     
     def _update_elapsed(self):
