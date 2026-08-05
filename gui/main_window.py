@@ -669,7 +669,20 @@ class MainWindow(QWidget):
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search server, DB, table…")
-        server_layout.addWidget(self.search)
+
+        search_clear_layout = QHBoxLayout()
+        search_clear_layout.setContentsMargins(0, 0, 0, 0)
+        search_clear_layout.setSpacing(4)
+        search_clear_layout.addWidget(self.search, 1)
+
+        self.btn_search_clear = QToolButton()
+        self.btn_search_clear.setObjectName("btn_icon")
+        self.btn_search_clear.setIcon(icon("close"))
+        self.btn_search_clear.setIconSize(QSize(16, 16))
+        self.btn_search_clear.setToolTip("Clear search")
+        search_clear_layout.addWidget(self.btn_search_clear)
+
+        server_layout.addLayout(search_clear_layout)
 
         buttons = QHBoxLayout()
 
@@ -785,7 +798,10 @@ class MainWindow(QWidget):
 
         filter_layout.addWidget(self.chk_only_errors)
 
-        self.btn_filter_clear = QPushButton("Clear")
+        self.btn_filter_clear = QToolButton()
+        self.btn_filter_clear.setObjectName("btn_icon")
+        self.btn_filter_clear.setIcon(icon("close"))
+        self.btn_filter_clear.setIconSize(QSize(16, 16))
         self.btn_filter_clear.setToolTip("Reset filters")
 
         filter_layout.addWidget(self.btn_filter_clear)
@@ -1140,6 +1156,13 @@ class MainWindow(QWidget):
         )
         search_row.addWidget(self.ed_search_mask, 1)
 
+        self.btn_mask_clear = QToolButton()
+        self.btn_mask_clear.setObjectName("btn_icon")
+        self.btn_mask_clear.setIcon(icon("close"))
+        self.btn_mask_clear.setIconSize(QSize(16, 16))
+        self.btn_mask_clear.setToolTip("Clear mask")
+        search_row.addWidget(self.btn_mask_clear)
+
         self.btn_search = QPushButton("Найти БД")
         self.btn_search.setObjectName("btn_primary")
         self.btn_search.setToolTip("Найти БД по маске на серверах")
@@ -1206,6 +1229,10 @@ class MainWindow(QWidget):
             self._filter_servers
         )
 
+        self.btn_search_clear.clicked.connect(
+            self.search.clear
+        )
+
         self.btn_log_clear.clicked.connect(
             self.log.clear
         )
@@ -1256,6 +1283,10 @@ class MainWindow(QWidget):
 
         self.btn_search.clicked.connect(
             self._search_run
+        )
+
+        self.btn_mask_clear.clicked.connect(
+            self.ed_search_mask.clear
         )
 
         self.btn_search_stop.clicked.connect(
