@@ -170,6 +170,9 @@ class MainWindow(QWidget):
         self.action_refresh.triggered.connect(
             self._refresh_servers
         )
+        self.action_toggle_servers.toggled.connect(
+            self._toggle_servers_panel
+        )
 
     def _create_query_backend(self):
 
@@ -477,12 +480,22 @@ class MainWindow(QWidget):
             "Stop",
             self,
         )
+        self.action_toggle_servers = QAction(
+            icon("swap_horiz", 20, "#0f172a"),
+            "Show/Hide servers",
+            self,
+        )
+        self.action_toggle_servers.setCheckable(True)
+        self.action_toggle_servers.setChecked(True)
 
         self.action_refresh.setToolTip("Refresh servers")
         self.action_check.setToolTip("Run check")
         self.action_update.setToolTip("Update")
         self.action_verify.setToolTip("Verify")
         self.action_stop.setToolTip("Stop")
+        self.action_toggle_servers.setToolTip(
+            "Show/Hide server list"
+        )
 
         self.action_update.setEnabled(False)
         self.action_verify.setEnabled(False)
@@ -495,6 +508,8 @@ class MainWindow(QWidget):
         self.toolbar.addAction(self.action_verify)
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.action_stop)
+        self.toolbar.addSeparator()
+        self.toolbar.addAction(self.action_toggle_servers)
 
         content.addWidget(self.toolbar)
 
@@ -571,9 +586,10 @@ class MainWindow(QWidget):
         body_splitter.setChildrenCollapsible(False)
         body_splitter.setHandleWidth(1)
 
-        server_frame = QFrame()
-        server_frame.setMinimumWidth(200)
-        server_layout = QVBoxLayout(server_frame)
+        self.server_frame = QFrame()
+        self.server_frame.setMinimumWidth(48)
+        self.server_frame.setMaximumWidth(420)
+        server_layout = QVBoxLayout(self.server_frame)
         server_layout.setContentsMargins(8, 8, 8, 8)
         server_layout.setSpacing(8)
 
@@ -618,7 +634,7 @@ class MainWindow(QWidget):
 
         server_layout.addWidget(self.server_list)
 
-        body_splitter.addWidget(server_frame)
+        body_splitter.addWidget(self.server_frame)
 
         right_container = QWidget()
 
@@ -990,6 +1006,7 @@ class MainWindow(QWidget):
 
         search_frame = QFrame()
         search_frame.setObjectName("TabsBlock")
+        search_frame.setFixedHeight(84)
 
         search_layout = QVBoxLayout(search_frame)
         search_layout.setContentsMargins(8, 8, 8, 8)
@@ -1032,16 +1049,6 @@ class MainWindow(QWidget):
             "как %текст%"
         )
         search_row.addWidget(self.ed_search_mask, 1)
-
-        self.chk_search_all_servers = QCheckBox(
-            "Все серверы"
-        )
-        self.chk_search_all_servers.setChecked(True)
-        self.chk_search_all_servers.setToolTip(
-            "Искать по всем серверам из servers.txt. "
-            "Если выключено — по выбранным в списке слева"
-        )
-        search_row.addWidget(self.chk_search_all_servers)
 
         self.btn_search = QPushButton("Найти БД")
         self.btn_search.setObjectName("btn_primary")
@@ -1183,7 +1190,7 @@ class MainWindow(QWidget):
             self.sql_editor.document()
         )
         body_splitter.addWidget(right_container)
-        body_splitter.setSizes([300, 900])
+        body_splitter.setSizes([110, 1090])
 
         content.addWidget(body_splitter)
 
@@ -1239,6 +1246,11 @@ class MainWindow(QWidget):
         self.lbl_servers_title.setText(
             f"Servers — Selected: {len(self.server_list.selectedItems())}"
         )
+
+    def _toggle_servers_panel(self, visible):
+        self.server_frame.setVisible(visible)
+        if visible:
+            self.action_toggle_servers.setChecked(True)
 
     def _invert_selection(self):
         for row in range(self.server_list.count()):
@@ -1853,14 +1865,7 @@ class MainWindow(QWidget):
             )
             return
 
-        if self.chk_search_all_servers.isChecked():
-            servers = self.repository.load_servers()
-        else:
-            servers = [
-                item.text().strip()
-                for item in self.server_list.selectedItems()
-            ]
-            servers = [s for s in servers if s]
+        servers = self.repository.load_servers()
 
         if not servers:
             self.lbl_sql_status.setText("No servers to search.")
@@ -1956,7 +1961,6 @@ class MainWindow(QWidget):
         self.btn_search.setEnabled(not busy)
         self.btn_search_stop.setEnabled(busy)
         self.ed_search_mask.setEnabled(not busy)
-        self.chk_search_all_servers.setEnabled(not busy)
 
     def _save_log(self):
 
