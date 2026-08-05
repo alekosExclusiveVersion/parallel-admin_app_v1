@@ -647,10 +647,11 @@ class MainWindow(QWidget):
 
         body_splitter = QSplitter(Qt.Horizontal)
         body_splitter.setChildrenCollapsible(False)
-        body_splitter.setHandleWidth(1)
+        body_splitter.setHandleWidth(6)
 
         self.server_frame = QFrame()
-        self.server_frame.setMaximumWidth(420)
+        self.server_frame.setMinimumWidth(200)
+        self.server_frame.setMaximumWidth(800)
         server_layout = QVBoxLayout(self.server_frame)
         server_layout.setContentsMargins(8, 8, 8, 8)
         server_layout.setSpacing(8)
@@ -714,6 +715,18 @@ class MainWindow(QWidget):
         self.server_list.setItemsExpandable(True)
         self.server_list.setExpandsOnDoubleClick(True)
         self.server_list.setIndentation(18)
+
+        # Отключаем растяжение последней колонки и включаем скролл,
+        # чтобы при переполнении содержимого появлялся скроллбар
+        header = self.server_list.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.server_list.setVerticalScrollBarPolicy(
+            Qt.ScrollBarAsNeeded
+        )
+        self.server_list.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarAsNeeded
+        )
 
         server_layout.addWidget(self.server_list)
 
