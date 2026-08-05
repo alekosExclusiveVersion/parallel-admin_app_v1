@@ -330,6 +330,7 @@ class MainWindow(QWidget):
         for server in servers:
             item = QTreeWidgetItem([server])
             item.setData(0, Qt.UserRole, server)
+            item.setIcon(0, icon("dns", 16, "#2563eb"))
             # Заглушка-ребёнок, чтобы у сервера появился маркер раскрытия
             QTreeWidgetItem(item, ["…"])
             self.server_list.addTopLevelItem(item)
@@ -1119,8 +1120,6 @@ class MainWindow(QWidget):
         search_top.addStretch()
 
         self.lbl_search_hint = QLabel(
-            "Результаты — в блоке Results. "
-            "Блок автоматически разворачивается при поступлении новых данных. "
             "Двойной клик подставит сервер и БД в консоль"
         )
         self.lbl_search_hint.setStyleSheet(
@@ -1455,6 +1454,7 @@ class MainWindow(QWidget):
             item = self.server_list.topLevelItem(index)
             server = self._server_name(item)
             item.setText(0, server)
+            item.setIcon(0, icon("dns", 16, "#2563eb"))
             item.takeChildren()
             # Заглушка-ребёнок для появления маркера раскрытия
             QTreeWidgetItem(item, ["…"])
@@ -1510,6 +1510,7 @@ class MainWindow(QWidget):
                     [f"{db_name}  ({self._format_size(db_size)})"],
                 )
                 db_item.setData(0, Qt.UserRole, db_name)
+                db_item.setIcon(0, icon("storage", 16, "#7c3aed"))
                 # Заглушка для раскрытия БД
                 QTreeWidgetItem(db_item, ["…"])
             break
@@ -1532,10 +1533,11 @@ class MainWindow(QWidget):
                     break
 
                 for table_name, table_size in tables:
-                    QTreeWidgetItem(
+                    table_item = QTreeWidgetItem(
                         db_item,
                         [f"{table_name}  ({self._format_size(table_size)})"],
                     )
+                    table_item.setIcon(0, icon("grid_on", 16, "#16a34a"))
                 break
             break
 
