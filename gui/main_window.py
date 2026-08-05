@@ -6,6 +6,7 @@ from PySide6.QtCore import QTimer
 from backend.repository import Repository
 from backend.check_worker import CheckWorker
 from backend.query_worker import ALL_DATABASES, QueryWorker
+from backend.db_search_worker import DatabaseSearchWorker
 from common.sql_builder import sql_builder
 from common.version import APP_VERSION
 from gui.icons import icon
@@ -111,6 +112,7 @@ class MainWindow(QWidget):
         self._build_ui()
         self._create_backend()
         self._create_query_backend()
+        self._create_search_backend()
 
         self._load_servers()
 
@@ -221,6 +223,49 @@ class MainWindow(QWidget):
 
         self.query_worker.finished.connect(
             self._sql_finished
+        )
+
+    def _create_search_backend(self):
+
+        self.search_thread = QThread(self)
+
+        self.search_worker = DatabaseSearchWorker()
+
+        self.search_worker.moveToThread(self.search_thread)
+
+        self.search_thread.started.connect(
+            self.search_worker.run
+        )
+
+        self.search_worker.finished.connect(
+            self.search_thread.quit
+        )
+
+        self.search_worker.started.connect(
+            self._search_started
+        )
+
+        self.search_worker.finished.connect(
+            self._search_finished
+        )
+
+        self.search_worker.progress.connect(
+            self._update_progress
+        )
+
+        self.search_worker.status.connect(
+            lambda text: self.append_log(
+                "INFO",
+                text,
+            )
+        )
+
+        self.search_worker.result.connect(
+            self._search_result
+        )
+
+        self.search_worker.error.connect(
+            self._search_error
         )
 
     def _update_progress(self, current, total):
@@ -1354,6 +1399,47 @@ class MainWindow(QWidget):
 
         sql_console_layout.addLayout(scope_row)
 
+        search_row = QHBoxLayout()
+
+        self.lbl_search = QLabel("Поиск БД:")
+        self.lbl_search.setStyleSheet(
+            "border:none;background:transparent;color:#0f172a;"
+        )
+        search_row.addWidget(self.lbl_search)
+
+        self.ed_search_mask = QLineEdit()
+        self.ed_search_mask.setPlaceholderText(
+            "Название БД, напр. ar_ru"
+        )
+        self.ed_search_mask.setToolTip(
+            "Поиск по содержимому имени БД. "
+            "Символы % вводить не нужно — поиск выполняется "
+            "как %текст%"
+        )
+        search_row.addWidget(self.ed_search_mask, 1)
+
+        self.chk_search_all_servers = QCheckBox(
+            "Все серверы"
+        )
+        self.chk_search_all_servers.setChecked(True)
+        self.chk_search_all_servers.setToolTip(
+            "Искать по всем серверам из servers.txt. "
+            "Если выключено — по выбранным в списке слева"
+        )
+        search_row.addWidget(self.chk_search_all_servers)
+
+        self.btn_search = QPushButton("Найти БД")
+        self.btn_search.setObjectName("btn_primary")
+        self.btn_search.setToolTip("Найти БД по маске на серверах")
+        search_row.addWidget(self.btn_search)
+
+        self.btn_search_stop = QPushButton("Stop")
+        self.btn_search_stop.setObjectName("btn_danger")
+        self.btn_search_stop.setEnabled(False)
+        search_row.addWidget(self.btn_search_stop)
+
+        sql_console_layout.addLayout(search_row)
+
         self.sql_editor = QPlainTextEdit()
         self.sql_editor.setLineWrapMode(
             QPlainTextEdit.NoWrap
@@ -1460,6 +1546,18 @@ class MainWindow(QWidget):
 
         self.btn_sql_stop.clicked.connect(
             self._sql_stop
+        )
+
+        self.btn_search.clicked.connect(
+            self._search_run
+        )
+
+        self.btn_search_stop.clicked.connect(
+            self._search_stop
+        )
+
+        self.ed_search_mask.returnPressed.connect(
+            self._search_run
         )
 
         self.chk_all_servers.toggled.connect(
@@ -2165,8 +2263,12 @@ class MainWindow(QWidget):
         self.cb_database.clear()
         self.cb_database.addItems(names)
 
-        if current:
+        # Восстанавливаем выбранную БД только если она есть на новом сервере,
+        # иначе очищаем выбор, чтобы не оставалась несуществующая БД.
+        if current and current in names:
             self.cb_database.setCurrentText(current)
+        else:
+            self.cb_database.setCurrentText("")
 
         self.cb_database.blockSignals(False)
 
@@ -2174,6 +2276,156 @@ class MainWindow(QWidget):
             f"{len(names)} database(s) loaded."
         )
         self._sql_busy(False)
+
+    # ----------------------------------------------------------
+    # Database search
+    # ----------------------------------------------------------
+
+    def _search_run(self):
+
+        if self.search_thread.isRunning():
+            return
+
+        mask = self.ed_search_mask.text().strip()
+
+        if not mask:
+            self.lbl_sql_status.setText("Enter a database mask.")
+            return
+
+        # Транслитерация '?' и '*' в LIKE-джокеры.
+        # Затем автоматически обрамляем %...% — поиск по содержимому,
+        # пользователю не нужно вводить символы %.
+        mask = mask.replace("*", "%").replace("?", "_")
+        mask = f"%{mask}%"
+
+        # Запрещаем небезопасные символы (обратная кавычка, точка-звёздочка),
+        # чтобы не ломать запрос и не выводить мусор.
+        if any(ch in mask for ch in ("`", "\x00")):
+            self.lbl_sql_status.setText(
+                "Mask contains invalid characters."
+            )
+            return
+
+        if self.chk_search_all_servers.isChecked():
+            servers = self.repository.load_servers()
+        else:
+            servers = [
+                item.text().strip()
+                for item in self.server_list.selectedItems()
+            ]
+            servers = [s for s in servers if s]
+
+        if not servers:
+            self.lbl_sql_status.setText("No servers to search.")
+            return
+
+        # Очистка таблицы без установки 7 колонок (как в clear_results),
+        # чтобы поиск мог задать собственные заголовки.
+        self.table.clear()
+        self.table.setRowCount(0)
+        self.table.setColumnCount(0)
+
+        self._results_source = "search"
+
+        self._update_only_errors_visibility()
+
+        self.table.setSortingEnabled(False)
+
+        self.progress.setValue(0)
+
+        self.lbl_sql_status.setText(
+            f"Searching '{mask}' on {len(servers)} server(s)..."
+        )
+
+        self._search_busy(True)
+
+        self.search_worker.set_request(mask, servers)
+
+        self.search_thread.start()
+
+    def _search_stop(self):
+
+        if not self.search_thread.isRunning():
+            return
+
+        self.search_worker.stop()
+
+        self.btn_search_stop.setEnabled(False)
+
+        self.lbl_sql_status.setText("Stopping search...")
+
+    def _search_started(self):
+
+        self.btn_search.setEnabled(False)
+        self.btn_search_stop.setEnabled(True)
+
+    def _search_finished(self):
+
+        self.btn_search.setEnabled(True)
+        self.btn_search_stop.setEnabled(False)
+
+        self.table.setSortingEnabled(True)
+
+        self._repopulate_filter_column()
+
+        self._filter_results()
+
+        self._search_busy(False)
+
+    def _search_result(self, server, database):
+
+        self._append_search_result(server, database)
+
+    def _search_error(self, server, message):
+
+        self.append_log(
+            "ERROR",
+            f"Search [{server}]: {message}",
+        )
+
+    def _append_search_result(self, server, database):
+
+        table = self.table
+
+        if table.columnCount() == 0:
+            labels = ["Source", "Server", "Database"]
+            table.setColumnCount(len(labels))
+            table.setHorizontalHeaderLabels(labels)
+
+            header = table.horizontalHeader()
+            header.setSectionResizeMode(
+                QHeaderView.Interactive
+            )
+            header.setStretchLastSection(True)
+
+            fixed_widths = {0: 64, 1: 190, 2: 160}
+            for index, width in fixed_widths.items():
+                if index < len(labels):
+                    header.resizeSection(index, width)
+
+            self._repopulate_filter_column()
+
+        base_row = table.rowCount()
+        table.setRowCount(base_row + 1)
+
+        display = ["SEARCH", server, database]
+
+        for c, value in enumerate(display):
+            item = QTableWidgetItem(str(value))
+            item.setToolTip(str(value))
+            item.setFlags(
+                item.flags() & ~Qt.ItemIsEditable
+            )
+            table.setItem(base_row, c, item)
+
+        self._filter_timer.start()
+
+    def _search_busy(self, busy):
+
+        self.btn_search.setEnabled(not busy)
+        self.btn_search_stop.setEnabled(busy)
+        self.ed_search_mask.setEnabled(not busy)
+        self.chk_search_all_servers.setEnabled(not busy)
 
     def _save_log(self):
 

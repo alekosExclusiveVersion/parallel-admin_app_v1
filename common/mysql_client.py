@@ -196,6 +196,33 @@ class MySQLClient:
             if list(r.values())[0] not in ignore
         ]
 
+    def search_databases(self, host: str, mask: str) -> list[str]:
+        """Поиск БД по маске в стиле LIKE (например 'ar_%45').
+
+        MySQL не поддерживает плейсхолдеры в `SHOW DATABASES LIKE`,
+        поэтому маска экранируется через conn.escape() и подставляется
+        вручную. Никаких дополнительных фильтров (prefix/regex/ignore)
+        не применяется — маску задаёт пользователь явно.
+        """
+        mask = mask.strip()
+
+        if not mask:
+            return []
+
+        with self.connect(host) as conn:
+            escaped = conn.escape(mask)
+
+            rows = self.execute_on_connection(
+                conn,
+                f"SHOW DATABASES LIKE {escaped}",
+            )
+
+        return [
+            db
+            for row in rows
+            for db in row.values()
+        ]
+
     def has_cfg_settings(self, host: str, database: str) -> bool:
         rows = self.query(
             host,
