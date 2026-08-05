@@ -260,6 +260,67 @@ WHERE stg_name=%s
 """
         return self.execute(host, sql, database, (value, name))
 
+    # ----------------------------------------------------------
+    # Размеры БД и таблиц
+    # ----------------------------------------------------------
+
+    def database_sizes(self, host: str) -> dict[str, int]:
+        """Суммарный размер (в байтах) по каждой БД на сервере.
+
+        Запрос читает статистику information_schema и не требует
+        полного доступа к данным.
+        """
+        sql = """
+SELECT
+    table_schema AS db,
+    SUM(data_length + index_length) AS total
+FROM information_schema.tables
+WHERE table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
+GROUP BY table_schema
+ORDER BY table_schema
+"""
+        rows = self.query(host, sql)
+
+        return {
+            row["db"]: int(row["total"] or 0)
+            for row in rows
+            if row.get("db")
+        }
+
+    def database_table_sizes(
+        self,
+        host: str,
+        database: str,
+    ) -> list[tuple[str, int]]:
+        """Список (таблица, размер в байтах) для одной БД."""
+        sql = f"""
+SELECT
+    table_name AS table_name,
+    (data_length + index_length) AS total
+FROM information_schema.tables
+WHERE table_schema = %s
+ORDER BY total DESC
+"""
+        rows = self.query(host, sql, database, (database,))
+
+        return [
+            (row["table_name"], int(row["total"] or 0))
+            for row in rows
+            if row.get("table_name")
+        ]
+
+    def table_size(self, host: str, database: str, table: str) -> int:
+        """Размер конкретной таблицы (в байтах)."""
+        sql = f"""
+SELECT
+    (data_length + index_length) AS total
+FROM information_schema.tables
+WHERE table_schema = %s AND table_name = %s
+"""
+        rows = self.query(host, sql, database, (database, table))
+
+        return int(rows[0]["total"] or 0) if rows else 0
+
 mysql = MySQLClient()
 
 

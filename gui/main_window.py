@@ -25,7 +25,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
-    QListWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -53,6 +54,7 @@ from backend.repository import Repository
 from backend.check_worker import CheckWorker
 from backend.query_worker import ALL_DATABASES, QueryWorker
 from backend.db_search_worker import DatabaseSearchWorker
+from backend.db_sizes_worker import DbSizesWorker
 from common.sql_builder import sql_builder
 from common.version import APP_VERSION
 from gui.icons import icon
@@ -111,6 +113,7 @@ class MainWindow(QWidget):
         self._create_backend()
         self._create_query_backend()
         self._create_search_backend()
+        self._create_sizes_backend()
 
         self._load_servers()
 
@@ -272,6 +275,38 @@ class MainWindow(QWidget):
             self._search_error
         )
 
+    def _create_sizes_backend(self):
+
+        self.sizes_thread = QThread(self)
+
+        self.sizes_worker = DbSizesWorker()
+
+        self.sizes_worker.moveToThread(self.sizes_thread)
+
+        self.sizes_thread.started.connect(
+            self.sizes_worker.run
+        )
+
+        self.sizes_worker.finished.connect(
+            self.sizes_thread.quit
+        )
+
+        self.sizes_worker.databases.connect(
+            self._sizes_databases
+        )
+
+        self.sizes_worker.tables.connect(
+            self._sizes_tables
+        )
+
+        self.sizes_worker.error.connect(
+            self._sizes_error
+        )
+
+        # Постоянный поток-потребитель: стартует один раз,
+        # задачи на загрузку размеров кладутся в очередь.
+        self.sizes_thread.start()
+
     def _update_progress(self, current, total):
 
         if total == 0:
@@ -291,8 +326,12 @@ class MainWindow(QWidget):
 
         self.server_list.clear()
 
-        if servers:
-            self.server_list.addItems(servers)
+        for server in servers:
+            item = QTreeWidgetItem([server])
+            item.setData(0, Qt.UserRole, server)
+            # Заглушка-ребёнок, чтобы у сервера появился маркер раскрытия
+            QTreeWidgetItem(item, ["…"])
+            self.server_list.addTopLevelItem(item)
 
         current_server = self.cb_server.currentText()
 
@@ -331,11 +370,11 @@ class MainWindow(QWidget):
 
     def _refresh_servers(self):
 
-        previous = self.server_list.count()
+        previous = self.server_list.topLevelItemCount()
 
         self._load_servers()
 
-        current = self.server_list.count()
+        current = self.server_list.topLevelItemCount()
 
         self.append_log(
             "SUCCESS",
@@ -368,8 +407,9 @@ class MainWindow(QWidget):
         self.table.clearSelection()
 
         servers = [
-            item.text()
+            self._server_name(item)
             for item in self.server_list.selectedItems()
+            if self._is_server_item(item)
         ]
 
         self.worker.set_servers(servers)
@@ -440,6 +480,10 @@ class MainWindow(QWidget):
         self._elapsed_timer.stop()
         
         self._started_at = None
+
+        # Сбрасываем кэшированные размеры БД/таблиц,
+        # чтобы при следующем раскрытии узлов были свежие данные.
+        self._reset_server_sizes()
 
     def _build_ui(self):
         self.setObjectName("MainWindow")
@@ -660,10 +704,16 @@ class MainWindow(QWidget):
 
         server_layout.addLayout(buttons)
 
-        self.server_list = QListWidget()
+        self.server_list = QTreeWidget()
+        self.server_list.setColumnCount(1)
+        self.server_list.setHeaderHidden(True)
         self.server_list.setSelectionMode(
             QAbstractItemView.ExtendedSelection
         )
+        self.server_list.setRootIsDecorated(True)
+        self.server_list.setItemsExpandable(True)
+        self.server_list.setExpandsOnDoubleClick(True)
+        self.server_list.setIndentation(18)
 
         server_layout.addWidget(self.server_list)
 
@@ -1179,6 +1229,10 @@ class MainWindow(QWidget):
             self._save_log
         )
 
+        self.server_list.itemExpanded.connect(
+            self._tree_item_expanded
+        )
+
         self.btn_query_clear.clicked.connect(
             self.query_log.clear
         )
@@ -1299,8 +1353,12 @@ class MainWindow(QWidget):
     # --------------------------------------------------------------
 
     def _update_selected_count(self):
+        selected = [
+            item for item in self.server_list.selectedItems()
+            if self._is_server_item(item)
+        ]
         self.lbl_servers_title.setText(
-            f"Servers — Selected: {len(self.server_list.selectedItems())}"
+            f"Servers — Selected: {len(selected)}"
         )
 
     def _toggle_servers_panel(self, visible):
@@ -1314,8 +1372,8 @@ class MainWindow(QWidget):
             self.action_toggle_results.setChecked(visible)
 
     def _invert_selection(self):
-        for row in range(self.server_list.count()):
-            item = self.server_list.item(row)
+        for index in range(self.server_list.topLevelItemCount()):
+            item = self.server_list.topLevelItem(index)
             item.setSelected(not item.isSelected())
 
         self._update_selected_count()
@@ -1323,12 +1381,157 @@ class MainWindow(QWidget):
     def _filter_servers(self, text):
         text = text.lower().strip()
 
-        for row in range(self.server_list.count()):
-            item = self.server_list.item(row)
+        for index in range(self.server_list.topLevelItemCount()):
+            item = self.server_list.topLevelItem(index)
 
             item.setHidden(
-                text not in item.text().lower()
+                text not in item.text(0).lower()
             )
+
+    # ----------------------------------------------------------
+    # Server tree (раскрывающийся список серверов/БД/таблиц)
+    # ----------------------------------------------------------
+
+    @staticmethod
+    def _server_name(item: QTreeWidgetItem | None) -> str:
+        """Имя сервера для top-level узла (без суффиксов размера)."""
+        if item is None:
+            return ""
+        return item.data(0, Qt.UserRole) or item.text(0)
+
+    @staticmethod
+    def _db_name(item: QTreeWidgetItem | None) -> str:
+        """Имя БД для узла второго уровня."""
+        if item is None:
+            return ""
+        return item.data(0, Qt.UserRole) or item.text(0)
+
+    @staticmethod
+    def _is_server_item(item: QTreeWidgetItem | None) -> bool:
+        return item is not None and item.parent() is None
+
+    @staticmethod
+    def _is_db_item(item: QTreeWidgetItem | None) -> bool:
+        return (
+            item is not None
+            and item.parent() is not None
+            and item.parent().parent() is None
+        )
+
+    def _format_size(self, size_bytes: int) -> str:
+        size = float(size_bytes)
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if size < 1024 or unit == "TB":
+                return f"{size:.1f} {unit}"
+            size /= 1024
+        return f"{size:.1f} TB"
+
+    def _selected_server_names(self) -> list[str]:
+        names = []
+        for item in self.server_list.selectedItems():
+            if self._is_server_item(item):
+                name = self._server_name(item)
+                if name and name not in names:
+                    names.append(name)
+        return names
+
+    def _reset_server_sizes(self):
+        """Сбрасывает загруженные размеры БД/таблиц, чтобы при
+        следующем раскрытии узла подтянулись свежие данные."""
+        for index in range(self.server_list.topLevelItemCount()):
+            item = self.server_list.topLevelItem(index)
+            server = self._server_name(item)
+            item.setText(0, server)
+            item.takeChildren()
+            # Заглушка-ребёнок для появления маркера раскрытия
+            QTreeWidgetItem(item, ["…"])
+
+    def _tree_item_expanded(self, item: QTreeWidgetItem):
+        """Загружает дочерние узлы при раскрытии сервера или БД."""
+        if self._is_server_item(item):
+            self._load_server_children(item)
+        elif self._is_db_item(item):
+            self._load_db_children(item)
+
+    def _load_server_children(self, item: QTreeWidgetItem):
+        """Загружает список БД с размерами для сервера."""
+        if item.childCount() == 1 and item.child(0).text(0) == "…":
+            item.takeChildren()
+            placeholder = QTreeWidgetItem(item, ["Загрузка…"])
+            placeholder.setDisabled(True)
+
+            server = self._server_name(item)
+            self.sizes_worker.request_databases([server])
+
+    def _load_db_children(self, item: QTreeWidgetItem):
+        """Загружает таблицы с размерами для БД."""
+        if item.childCount() == 1 and item.child(0).text(0) == "…":
+            item.takeChildren()
+            placeholder = QTreeWidgetItem(item, ["Загрузка…"])
+            placeholder.setDisabled(True)
+
+            server = self._server_name(item.parent())
+            database = self._db_name(item)
+            self.sizes_worker.request_tables(server, database)
+
+    def _sizes_databases(self, server: str, sizes: dict):
+        for index in range(self.server_list.topLevelItemCount()):
+            server_item = self.server_list.topLevelItem(index)
+            if self._server_name(server_item) != server:
+                continue
+
+            total = sum(sizes.values())
+            server_item.setText(
+                0,
+                f"{server}  ({self._format_size(total)})",
+            )
+            server_item.takeChildren()
+
+            if not sizes:
+                QTreeWidgetItem(server_item, ["Нет БД"])
+                break
+
+            for db_name, db_size in sizes.items():
+                db_item = QTreeWidgetItem(
+                    server_item,
+                    [f"{db_name}  ({self._format_size(db_size)})"],
+                )
+                db_item.setData(0, Qt.UserRole, db_name)
+                # Заглушка для раскрытия БД
+                QTreeWidgetItem(db_item, ["…"])
+            break
+
+    def _sizes_tables(self, server: str, database: str, tables: list):
+        for index in range(self.server_list.topLevelItemCount()):
+            server_item = self.server_list.topLevelItem(index)
+            if self._server_name(server_item) != server:
+                continue
+
+            for db_index in range(server_item.childCount()):
+                db_item = server_item.child(db_index)
+                if self._db_name(db_item) != database:
+                    continue
+
+                db_item.takeChildren()
+
+                if not tables:
+                    QTreeWidgetItem(db_item, ["Нет таблиц"])
+                    break
+
+                for table_name, table_size in tables:
+                    QTreeWidgetItem(
+                        db_item,
+                        [f"{table_name}  ({self._format_size(table_size)})"],
+                    )
+                break
+            break
+
+    def _sizes_error(self, server: str, context: str, message: str):
+        self.append_log(
+            "ERROR",
+            f"Sizes [{server}/{context}]: {message}",
+        )
+
     # ----------------------------------------------------------
     # ResultTable
     # ----------------------------------------------------------
@@ -1671,8 +1874,9 @@ class MainWindow(QWidget):
         if self.chk_all_servers.isChecked():
 
             hosts = [
-                item.text().strip()
+                self._server_name(item)
                 for item in self.server_list.selectedItems()
+                if self._is_server_item(item)
             ]
 
             hosts = [host for host in hosts if host]
@@ -2005,6 +2209,10 @@ class MainWindow(QWidget):
 
         self.progress.setValue(0)
 
+        # Сбрасываем кэшированные размеры БД/таблиц,
+        # чтобы при следующем раскрытии узлов были свежие данные.
+        self._reset_server_sizes()
+
     def _search_progress(self, current, total):
         self._update_progress(current, total)
         self._search_completed = current
@@ -2084,8 +2292,14 @@ class MainWindow(QWidget):
         self.worker.stop()
         self.query_worker.stop()
         self.search_worker.stop()
+        self.sizes_worker.stop()
 
-        for thr in (self.thread, self.query_thread, self.search_thread):
+        for thr in (
+            self.thread,
+            self.query_thread,
+            self.search_thread,
+            self.sizes_thread,
+        ):
             if thr.isRunning():
                 thr.quit()
                 if not thr.wait(5000):

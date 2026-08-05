@@ -69,7 +69,7 @@ QFrame#StatusBar QProgressBar::chunk{
 }
 
 /* --- Inputs --- */
-QListWidget,
+QTreeWidget,
 QTextEdit,
 QPlainTextEdit,
 QTableWidget,
@@ -86,7 +86,21 @@ QAbstractSpinBox{
     selection-color:#0f172a;
 }
 
-QListWidget:focus,
+QTreeWidget::item{
+    padding:3px 2px;
+    border-radius:4px;
+}
+
+QTreeWidget::item:selected{
+    background:#eff6ff;
+    color:#0f172a;
+}
+
+QTreeWidget::item:hover{
+    background:#f8fafc;
+}
+
+QTreeWidget:focus,
 QTextEdit:focus,
 QPlainTextEdit:focus,
 QLineEdit:focus,
