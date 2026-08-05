@@ -32,15 +32,6 @@ QLabel#SectionTitle{
     background:transparent;
 }
 
-QSplitter{
-    background:transparent;
-    border:none;
-    border-radius:0;
-}
-
-QSplitter::handle{
-    background:transparent;
-}
 
 /* --- Status bar (full-bleed) --- */
 QFrame#StatusBar{

@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QToolButton,
     QProgressBar,
     QLineEdit,
+    QSizePolicy,
     QCheckBox,
     QComboBox,
     QPushButton,
@@ -646,12 +647,10 @@ class MainWindow(QWidget):
         status_layout.addWidget(self.progress)
 
         body_splitter = QSplitter(Qt.Horizontal)
-        body_splitter.setChildrenCollapsible(False)
-        body_splitter.setHandleWidth(6)
+        body_splitter.setHandleWidth(10)
 
         self.server_frame = QFrame()
         self.server_frame.setMinimumWidth(200)
-        self.server_frame.setMaximumWidth(800)
         server_layout = QVBoxLayout(self.server_frame)
         server_layout.setContentsMargins(8, 8, 8, 8)
         server_layout.setSpacing(8)
@@ -716,11 +715,9 @@ class MainWindow(QWidget):
         self.server_list.setExpandsOnDoubleClick(True)
         self.server_list.setIndentation(18)
 
-        # Отключаем растяжение последней колонки и включаем скролл,
-        # чтобы при переполнении содержимого появлялся скроллбар
         header = self.server_list.header()
-        header.setStretchLastSection(False)
-        header.setSectionResizeMode(QHeaderView.ResizeToContents)
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(QHeaderView.Stretch)
         self.server_list.setVerticalScrollBarPolicy(
             Qt.ScrollBarAsNeeded
         )
@@ -733,6 +730,11 @@ class MainWindow(QWidget):
         body_splitter.addWidget(self.server_frame)
 
         right_container = QWidget()
+        right_container.setMinimumWidth(200)
+        body_splitter.addWidget(right_container)
+        body_splitter.setStretchFactor(0, 0)
+        body_splitter.setStretchFactor(1, 1)
+        body_splitter.setSizes([280, 900])
 
         right = QVBoxLayout(right_container)
         right.setContentsMargins(0, 0, 0, 0)
@@ -1102,7 +1104,7 @@ class MainWindow(QWidget):
 
         search_frame = QFrame()
         search_frame.setObjectName("TabsBlock")
-        search_frame.setFixedHeight(84)
+        search_frame.setFixedHeight(90)
 
         search_layout = QVBoxLayout(search_frame)
         search_layout.setContentsMargins(8, 8, 8, 8)
@@ -1182,14 +1184,15 @@ class MainWindow(QWidget):
 
         self.tabs_frame_layout.addWidget(tabs)
 
-        right_splitter = QSplitter(Qt.Vertical)
-        right_splitter.addWidget(search_frame)
-        right_splitter.addWidget(sql_console_frame)
-        right_splitter.addWidget(self.tabs_frame)
-        right_splitter.setSizes([90, 240, 560])
-        right_splitter.setChildrenCollapsible(False)
-        right_splitter.setHandleWidth(1)
-        right.addWidget(right_splitter)
+        self.right_splitter = QSplitter(Qt.Vertical)
+        self.right_splitter.setChildrenCollapsible(True)
+        self.right_splitter.setOpaqueResize(True)
+        self.right_splitter.setHandleWidth(4)
+        self.right_splitter.addWidget(search_frame)
+        self.right_splitter.addWidget(sql_console_frame)
+        self.right_splitter.addWidget(self.tabs_frame)
+        self.right_splitter.setSizes([90, 240, 560])
+        right.addWidget(self.right_splitter)
 
         self.append_log(
             "INFO",
@@ -1309,13 +1312,8 @@ class MainWindow(QWidget):
         self.sql_highlighter = SQLHighlighter(
             self.sql_editor.document()
         )
-        body_splitter.addWidget(right_container)
-        body_splitter.setSizes([
-            self.server_frame.minimumSizeHint().width(),
-            1200,
-        ])
 
-        content.addWidget(body_splitter)
+        content.addWidget(body_splitter, 1)
 
         root.addWidget(content_widget, 1)
 
@@ -1383,6 +1381,8 @@ class MainWindow(QWidget):
         self.tabs_frame.setVisible(visible)
         if self.action_toggle_results.isChecked() != visible:
             self.action_toggle_results.setChecked(visible)
+        if visible:
+            self.right_splitter.setSizes([90, 240, 560])
 
     def _invert_selection(self):
         for index in range(self.server_list.topLevelItemCount()):
