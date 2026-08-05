@@ -705,7 +705,7 @@ class MainWindow(QWidget):
         )
         self.server_list.setRootIsDecorated(True)
         self.server_list.setItemsExpandable(True)
-        self.server_list.setExpandsOnDoubleClick(True)
+        self.server_list.setExpandsOnDoubleClick(False)
         self.server_list.setIndentation(18)
 
         header = self.server_list.header()
@@ -1222,6 +1222,10 @@ class MainWindow(QWidget):
             self._tree_item_expanded
         )
 
+        self.server_list.itemDoubleClicked.connect(
+            self._server_tree_double_click
+        )
+
         self.btn_query_clear.clicked.connect(
             self.query_log.clear
         )
@@ -1425,6 +1429,16 @@ class MainWindow(QWidget):
             and item.parent().parent() is None
         )
 
+    @staticmethod
+    def _is_table_item(item: QTreeWidgetItem | None) -> bool:
+        """Узел таблицы — третий уровень (сервер → БД → таблица)."""
+        return (
+            item is not None
+            and item.parent() is not None
+            and item.parent().parent() is not None
+            and item.parent().parent().parent() is None
+        )
+
     def _format_size(self, size_bytes: int) -> str:
         size = float(size_bytes)
         for unit in ("B", "KB", "MB", "GB", "TB"):
@@ -1482,6 +1496,71 @@ class MainWindow(QWidget):
             database = self._db_name(item)
             self.sizes_worker.request_tables(server, database)
 
+    def _table_name(self, item: QTreeWidgetItem | None) -> str:
+        """Имя таблицы для узла третьего уровня (без суффикса размера)."""
+        if item is None:
+            return ""
+        return item.data(0, Qt.UserRole) or item.text(0).split("  (")[0].strip()
+
+    def _server_tree_double_click(self, item: QTreeWidgetItem):
+        """Двойной клик: на таблице — SELECT *, на сервере/БД — раскрытие."""
+        if self._is_table_item(item):
+            server = self._server_name(item.parent().parent())
+            database = self._db_name(item.parent())
+            table = self._table_name(item)
+
+            if not server or not database or not table:
+                return
+
+            self._run_table_select(server, database, table)
+            return
+
+        # Сервер или БД — вручную раскрыть/свернуть узел
+        if item.isExpanded():
+            item.setExpanded(False)
+        else:
+            item.setExpanded(True)
+            self._tree_item_expanded(item)
+
+    def _run_table_select(self, server: str, database: str, table: str):
+        """Выполняет SELECT * FROM `db`.`table` в фоновом потоке."""
+        # Если поток занят (например, загрузкой списка БД) — останавливаем его,
+        # чтобы SELECT гарантированно выполнился.
+        if self.query_thread.isRunning():
+            self.query_worker.stop()
+            self.query_thread.wait(3000)
+
+        sql = f"SELECT * FROM `{database}`.`{table}` LIMIT 1000"
+
+        self.table.clear()
+        self.table.setColumnCount(0)
+        self.table.setRowCount(0)
+        self.table.setSortingEnabled(False)
+
+        self._results_source = "sql"
+        self._update_only_errors_visibility()
+
+        self.lbl_sql_status.setText(
+            f"Running {server}.{database}.{table}..."
+        )
+        self._sql_busy(True)
+
+        # Авто-показ блока Results
+        if not self.action_toggle_results.isChecked():
+            self.action_toggle_results.setChecked(True)
+
+        self.query_worker.set_multi_request(
+            [(server, database)],
+            sql,
+            1000,
+        )
+        self.query_thread.start()
+
+        self.append_log(
+            "INFO",
+            f"SELECT * FROM `{database}`.`{table}` @ {server}",
+        )
+
     def _sizes_databases(self, server: str, sizes: dict):
         for index in range(self.server_list.topLevelItemCount()):
             server_item = self.server_list.topLevelItem(index)
@@ -1532,6 +1611,7 @@ class MainWindow(QWidget):
                         db_item,
                         [f"{table_name}  ({self._format_size(table_size)})"],
                     )
+                    table_item.setData(0, Qt.UserRole, table_name)
                     table_item.setIcon(0, icon("grid_on", 16, "#16a34a"))
                 break
             break
