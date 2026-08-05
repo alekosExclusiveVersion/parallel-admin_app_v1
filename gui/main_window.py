@@ -457,6 +457,9 @@ class MainWindow(QWidget):
 
         self.toolbar = QToolBar()
         self.toolbar.setIconSize(QSize(20, 20))
+        self.toolbar.setToolButtonStyle(
+            Qt.ToolButtonTextBesideIcon
+        )
 
         self.action_refresh = QAction(
             icon("refresh", 20, "#0f172a"),
@@ -485,7 +488,7 @@ class MainWindow(QWidget):
         )
         self.action_toggle_servers = QAction(
             icon("swap_horiz", 20, "#0f172a"),
-            "Show/Hide servers",
+            "Servers",
             self,
         )
         self.action_toggle_servers.setCheckable(True)
@@ -493,7 +496,7 @@ class MainWindow(QWidget):
 
         self.action_toggle_results = QAction(
             icon("swap_horiz", 20, "#0f172a"),
-            "Show/Hide results",
+            "Results",
             self,
         )
         self.action_toggle_results.setCheckable(True)
@@ -1103,23 +1106,16 @@ class MainWindow(QWidget):
         self.tabs_frame_layout.setContentsMargins(0, 0, 0, 0)
         self.tabs_frame_layout.setSpacing(0)
 
-        tabs_top = QHBoxLayout()
-
-        self.lbl_tabs_title = QLabel("Results + Logs + Queries")
-        self.lbl_tabs_title.setObjectName("SectionTitle")
-        tabs_top.addWidget(self.lbl_tabs_title)
-
-        tabs_top.addStretch()
-
         self.btn_hide_tabs = QToolButton()
         self.btn_hide_tabs.setObjectName("btn_icon")
         self.btn_hide_tabs.setIcon(icon("close"))
         self.btn_hide_tabs.setIconSize(QSize(16, 16))
         self.btn_hide_tabs.setToolTip("Hide results block")
+        tabs.setCornerWidget(
+            self.btn_hide_tabs,
+            Qt.TopRightCorner,
+        )
 
-        tabs_top.addWidget(self.btn_hide_tabs)
-
-        self.tabs_frame_layout.addLayout(tabs_top)
         self.tabs_frame_layout.addWidget(tabs)
 
         right_splitter = QSplitter(Qt.Vertical)
