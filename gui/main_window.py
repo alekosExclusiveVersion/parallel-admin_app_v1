@@ -254,7 +254,7 @@ class MainWindow(QWidget):
         )
 
         self.search_worker.progress.connect(
-            self._update_progress
+            self._search_progress
         )
 
         self.search_worker.status.connect(
@@ -1945,6 +1945,10 @@ class MainWindow(QWidget):
 
         self.progress.setValue(0)
 
+        self._search_found = 0
+        self._search_completed = 0
+        self._search_stopped = False
+
         self.lbl_sql_status.setText(
             f"Searching '{mask}' on {len(servers)} server(s)..."
         )
@@ -1963,6 +1967,8 @@ class MainWindow(QWidget):
         self.search_worker.stop()
 
         self.btn_search_stop.setEnabled(False)
+
+        self._search_stopped = True
 
         self.lbl_sql_status.setText("Stopping search...")
 
@@ -1984,7 +1990,24 @@ class MainWindow(QWidget):
 
         self._search_busy(False)
 
+        if self._search_stopped:
+            self.lbl_sql_status.setText("Search stopped.")
+        else:
+            self.lbl_sql_status.setText(
+                f"Search finished: {self._search_found} "
+                f"database(s) found on {self._search_completed} "
+                f"server(s)."
+            )
+
+        self.progress.setValue(0)
+
+    def _search_progress(self, current, total):
+        self._update_progress(current, total)
+        self._search_completed = current
+
     def _search_result(self, server, database):
+
+        self._search_found += 1
 
         self._append_search_result(server, database)
 
