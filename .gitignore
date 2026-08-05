@@ -32,3 +32,5 @@ logs/
 
 # macOS
 .DS_Store
+# Спецификация Parallels SQL Admin
+Parallels SQL Admin.spec
