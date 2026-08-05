@@ -12,6 +12,12 @@ QWidget#MainWindow{
     background:#f4f6f8;
 }
 
+QFrame{
+    background:white;
+    border:1px solid #e3e8ef;
+    border-radius:10px;
+}
+
 QLabel{
     color:#0f172a;
     background:transparent;
@@ -24,12 +30,6 @@ QLabel#SectionTitle{
     color:#334155;
     border:none;
     background:transparent;
-}
-
-QFrame{
-    background:white;
-    border:1px solid #e3e8ef;
-    border-radius:10px;
 }
 
 QSplitter{
