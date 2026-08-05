@@ -1,4 +1,23 @@
+import os
+import shutil
 import sys
+from pathlib import Path
+
+
+if getattr(sys, "frozen", False):
+    base = (
+        Path(os.environ.get("HOME", str(Path.home())))
+        / "Library" / "Application Support" / "Parallels SQL Admin"
+    )
+    base.mkdir(parents=True, exist_ok=True)
+
+    os.chdir(base)
+
+    for name in ("config.ini", "servers.txt"):
+        dst = base / name
+        src = Path(sys._MEIPASS) / name
+        if not dst.exists() and src.exists():
+            shutil.copy(src, dst)
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QColor, QPalette
