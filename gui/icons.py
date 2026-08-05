@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
@@ -72,3 +74,32 @@ def icon(name: str, size: int = 16, color: str = "#475569") -> QIcon:
     painter.end()
 
     return QIcon(pixmap)
+
+
+_ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+
+
+def app_icon() -> QIcon:
+    """Иконка приложения из файла assets/app_icon.svg.
+
+    Используется для окна и панели задач. Если файл отсутствует —
+    возвращается встроенная SVG-иконка (fallback), чтобы приложение
+    не падало при запуске из другого каталога.
+    """
+    svg_path = _ASSETS_DIR / "app_icon.svg"
+    png_path = _ASSETS_DIR / "app_icon.png"
+
+    if svg_path.exists():
+        renderer = QSvgRenderer(str(svg_path))
+        pixmap = QPixmap(256, 256)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        return QIcon(pixmap)
+
+    if png_path.exists():
+        return QIcon(str(png_path))
+
+    # Фallback: монохромная встроенная иконка
+    return icon("app_icon", size=64, color="#2563eb")
