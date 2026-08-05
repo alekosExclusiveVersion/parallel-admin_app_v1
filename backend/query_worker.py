@@ -86,7 +86,8 @@ class QueryWorker(QObject):
                     rows = rows[:row_limit]
 
                     rows = [
-                        [str(value) for value in row.values()]
+                        ["Null" if value is None else str(value)
+                         for value in row.values()]
                         for row in rows
                     ]
 
