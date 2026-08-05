@@ -173,6 +173,9 @@ class MainWindow(QWidget):
         self.action_toggle_servers.toggled.connect(
             self._toggle_servers_panel
         )
+        self.action_toggle_results.toggled.connect(
+            self._toggle_results_panel
+        )
 
     def _create_query_backend(self):
 
@@ -488,6 +491,14 @@ class MainWindow(QWidget):
         self.action_toggle_servers.setCheckable(True)
         self.action_toggle_servers.setChecked(True)
 
+        self.action_toggle_results = QAction(
+            icon("swap_horiz", 20, "#0f172a"),
+            "Show/Hide results",
+            self,
+        )
+        self.action_toggle_results.setCheckable(True)
+        self.action_toggle_results.setChecked(True)
+
         self.action_refresh.setToolTip("Refresh servers")
         self.action_check.setToolTip("Run check")
         self.action_update.setToolTip("Update")
@@ -495,6 +506,9 @@ class MainWindow(QWidget):
         self.action_stop.setToolTip("Stop")
         self.action_toggle_servers.setToolTip(
             "Show/Hide server list"
+        )
+        self.action_toggle_results.setToolTip(
+            "Show/Hide results block"
         )
 
         self.action_update.setEnabled(False)
@@ -510,6 +524,8 @@ class MainWindow(QWidget):
         self.toolbar.addAction(self.action_stop)
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.action_toggle_servers)
+        self.toolbar.addSeparator()
+        self.toolbar.addAction(self.action_toggle_results)
 
         content.addWidget(self.toolbar)
 
@@ -587,7 +603,6 @@ class MainWindow(QWidget):
         body_splitter.setHandleWidth(1)
 
         self.server_frame = QFrame()
-        self.server_frame.setMinimumWidth(48)
         self.server_frame.setMaximumWidth(420)
         server_layout = QVBoxLayout(self.server_frame)
         server_layout.setContentsMargins(8, 8, 8, 8)
@@ -595,7 +610,22 @@ class MainWindow(QWidget):
 
         self.lbl_servers_title = QLabel("Servers — Selected: 0")
         self.lbl_servers_title.setObjectName("SectionTitle")
-        server_layout.addWidget(self.lbl_servers_title)
+
+        servers_top = QHBoxLayout()
+
+        servers_top.addWidget(self.lbl_servers_title)
+
+        servers_top.addStretch()
+
+        self.btn_hide_servers = QToolButton()
+        self.btn_hide_servers.setObjectName("btn_icon")
+        self.btn_hide_servers.setIcon(icon("close"))
+        self.btn_hide_servers.setIconSize(QSize(16, 16))
+        self.btn_hide_servers.setToolTip("Hide server list")
+
+        servers_top.addWidget(self.btn_hide_servers)
+
+        server_layout.addLayout(servers_top)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search server...")
@@ -1067,17 +1097,35 @@ class MainWindow(QWidget):
         tabs.addTab(log_frame, "Logs")
         tabs.addTab(queries_frame, "Queries")
 
-        tabs_frame = QFrame()
-        tabs_frame.setObjectName("TabsBlock")
-        tabs_frame_layout = QVBoxLayout(tabs_frame)
-        tabs_frame_layout.setContentsMargins(0, 0, 0, 0)
-        tabs_frame_layout.setSpacing(0)
-        tabs_frame_layout.addWidget(tabs)
+        self.tabs_frame = QFrame()
+        self.tabs_frame.setObjectName("TabsBlock")
+        self.tabs_frame_layout = QVBoxLayout(self.tabs_frame)
+        self.tabs_frame_layout.setContentsMargins(0, 0, 0, 0)
+        self.tabs_frame_layout.setSpacing(0)
+
+        tabs_top = QHBoxLayout()
+
+        self.lbl_tabs_title = QLabel("Results + Logs + Queries")
+        self.lbl_tabs_title.setObjectName("SectionTitle")
+        tabs_top.addWidget(self.lbl_tabs_title)
+
+        tabs_top.addStretch()
+
+        self.btn_hide_tabs = QToolButton()
+        self.btn_hide_tabs.setObjectName("btn_icon")
+        self.btn_hide_tabs.setIcon(icon("close"))
+        self.btn_hide_tabs.setIconSize(QSize(16, 16))
+        self.btn_hide_tabs.setToolTip("Hide results block")
+
+        tabs_top.addWidget(self.btn_hide_tabs)
+
+        self.tabs_frame_layout.addLayout(tabs_top)
+        self.tabs_frame_layout.addWidget(tabs)
 
         right_splitter = QSplitter(Qt.Vertical)
         right_splitter.addWidget(search_frame)
         right_splitter.addWidget(sql_console_frame)
-        right_splitter.addWidget(tabs_frame)
+        right_splitter.addWidget(self.tabs_frame)
         right_splitter.setSizes([90, 240, 560])
         right_splitter.setChildrenCollapsible(False)
         right_splitter.setHandleWidth(1)
@@ -1108,6 +1156,14 @@ class MainWindow(QWidget):
 
         self.btn_invert.clicked.connect(
             self._invert_selection
+        )
+
+        self.btn_hide_servers.clicked.connect(
+            lambda: self.action_toggle_servers.setChecked(False)
+        )
+
+        self.btn_hide_tabs.clicked.connect(
+            lambda: self.action_toggle_results.setChecked(False)
         )
 
         self.search.textChanged.connect(
@@ -1190,7 +1246,10 @@ class MainWindow(QWidget):
             self.sql_editor.document()
         )
         body_splitter.addWidget(right_container)
-        body_splitter.setSizes([110, 1090])
+        body_splitter.setSizes([
+            self.server_frame.minimumSizeHint().width(),
+            1200,
+        ])
 
         content.addWidget(body_splitter)
 
@@ -1249,8 +1308,13 @@ class MainWindow(QWidget):
 
     def _toggle_servers_panel(self, visible):
         self.server_frame.setVisible(visible)
-        if visible:
-            self.action_toggle_servers.setChecked(True)
+        if self.action_toggle_servers.isChecked() != visible:
+            self.action_toggle_servers.setChecked(visible)
+
+    def _toggle_results_panel(self, visible):
+        self.tabs_frame.setVisible(visible)
+        if self.action_toggle_results.isChecked() != visible:
+            self.action_toggle_results.setChecked(visible)
 
     def _invert_selection(self):
         for row in range(self.server_list.count()):
