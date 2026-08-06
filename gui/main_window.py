@@ -56,6 +56,7 @@ from backend.check_worker import CheckWorker
 from backend.query_worker import ALL_DATABASES, QueryWorker
 from backend.db_search_worker import DatabaseSearchWorker
 from backend.db_sizes_worker import DbSizesWorker
+from common.sql_assistant import AssistantSuggestion, assist as sql_assist
 from common.sql_builder import sql_builder
 from common.version import APP_VERSION
 from gui.icons import icon
@@ -1072,6 +1073,32 @@ class MainWindow(QWidget):
 
         sql_console_layout.addLayout(scope_row)
 
+        # ----------------------------------------------------------
+        # Помощник: естественный язык → SQL
+        # ----------------------------------------------------------
+
+        self.ed_assistant = QLineEdit()
+        self.ed_assistant.setPlaceholderText(
+            "Помощник: опишите задачу словами, напр. «размер бд ar_actviauto и "
+            "autoprice_activauto» или «какие таблицы самые большие в базе ar_ru»"
+        )
+        self.ed_assistant.setClearButtonEnabled(True)
+        self.ed_assistant.setToolTip(
+            "Опишите задачу на русском — помощник подставит готовый SQL "
+            "в редактор. Enter — вставить и выполнить, Shift+Enter — только "
+            "вставить SQL."
+        )
+        self.btn_assistant = QPushButton("Подсказать")
+        self.btn_assistant.setToolTip(
+            "Сгенерировать SQL по описанию и вставить в редактор. "
+            "Enter в поле — вставить и сразу выполнить."
+        )
+
+        assistant_row = QHBoxLayout()
+        assistant_row.addWidget(self.ed_assistant, 1)
+        assistant_row.addWidget(self.btn_assistant)
+        sql_console_layout.addLayout(assistant_row)
+
         self.sql_editor = QPlainTextEdit()
         self.sql_editor.setLineWrapMode(
             QPlainTextEdit.NoWrap
@@ -1253,6 +1280,13 @@ class MainWindow(QWidget):
 
         self.btn_sql_stop.clicked.connect(
             self._sql_stop
+        )
+
+        self.btn_assistant.clicked.connect(
+            self._assistant_apply_from_field
+        )
+        self.ed_assistant.returnPressed.connect(
+            self._assistant_run
         )
 
         self.btn_search.clicked.connect(
@@ -1962,6 +1996,87 @@ class MainWindow(QWidget):
             )
 
         self.query_thread.start()
+
+    def _assistant_suggest(self) -> AssistantSuggestion | None:
+        """Разбирает текст из поля помощника и возвращает подсказку."""
+        text = self.ed_assistant.text().strip()
+
+        if not text:
+            self.lbl_sql_status.setText("Опишите задачу словами в поле помощника.")
+            return None
+
+        context = {
+            "server": self.cb_server.currentText().strip(),
+            "database": self.cb_database.currentText().strip(),
+        }
+
+        suggestion = sql_assist(text, context)
+
+        if suggestion is None:
+            self.lbl_sql_status.setText(
+                "Не удалось распознать задачу. Опишите её иначе."
+            )
+            self.append_log(
+                "WARNING",
+                f"Помощник не распознал: «{text}»",
+            )
+            return None
+
+        return suggestion
+
+    def _assistant_apply_from_field(self):
+        """Кнопка «Подсказать»: вставить SQL в редактор без выполнения."""
+        suggestion = self._assistant_suggest()
+        if suggestion is not None:
+            self._assistant_apply(suggestion)
+
+    def _assistant_run(self):
+        """Enter в поле помощника: вставить SQL и сразу выполнить."""
+        suggestion = self._assistant_suggest()
+        if suggestion is None:
+            return
+
+        self._assistant_apply(suggestion)
+
+        if not self.chk_write.isChecked() and is_write_statement(suggestion.sql):
+            answer = QMessageBox.question(
+                self,
+                "Write query",
+                "The query may modify data.\n\nContinue?",
+            )
+            if answer != QMessageBox.Yes:
+                return
+
+        self._sql_run()
+
+    def _assistant_apply(self, suggestion):
+        """Вставляет сгенерированный SQL в редактор и логирует."""
+        self.sql_editor.setPlainText(suggestion.sql)
+        self.sql_editor.moveCursor(QTextCursor.End)
+
+        self.append_log(
+            "INFO",
+            f"Помощник: {suggestion.title}",
+        )
+
+        if suggestion.databases:
+            self.append_log(
+                "INFO",
+                "  БД: " + ", ".join(suggestion.databases),
+            )
+
+        if suggestion.tables:
+            self.append_log(
+                "INFO",
+                "  Таблицы: " + ", ".join(suggestion.tables),
+            )
+
+        if suggestion.hint:
+            self.append_log("WARNING", f"  {suggestion.hint}")
+
+        self.lbl_sql_status.setText(
+            f"Подсказка: {suggestion.title} — SQL вставлен в редактор."
+        )
 
     def _sql_build_targets(self):
 
