@@ -2470,6 +2470,18 @@ class MainWindow(QWidget):
 
         self._filter_results()
 
+    def _on_result_search_changed(self):
+        """Debounce-обработчик изменения текста в поле фильтра результатов.
+
+        Вызывается при каждом изменении текста в поле result_search
+        (см. подключение сигнала в _build_ui). Сам фильтр не запускается
+        мгновенно: вместо этого перезапускается одноразовый таймер
+        self._filter_timer (40 мс), чтобы не перерисовывать таблицу на
+        каждый нажатый символ. По истечении таймера срабатывает
+        self._filter_results().
+        """
+        self._filter_timer.start()
+
     def _filter_results(self):
 
         search = self.result_search.text().strip().lower()
