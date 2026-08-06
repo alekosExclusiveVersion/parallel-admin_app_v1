@@ -153,12 +153,27 @@ def _like_escape(term: str) -> str:
     )
 
 
-def _extract_identifiers(text: str) -> tuple[list[str], list[str]]:
-    """Извлекает имена БД и таблиц из текста запроса."""
+def _extract_identifiers(text: str, server: str = "") -> tuple[list[str], list[str]]:
+    """Извлекает имена БД и таблиц из текста запроса.
+
+    `server` — имя сервера из контекста, части которого (p7ru4, tradesoft, ru)
+    исключаются из кандидатов в БД.
+    """
     dbs: list[str] = []
     tables: list[str] = []
     seen_dbs: set[str] = set()
     seen_tables: set[str] = set()
+
+    # Части имени сервера (p7ru4.tradesoft.ru → {p7ru4, tradesoft, ru})
+    server_parts: set[str] = set()
+    if server:
+        for part in server.lower().split("."):
+            p = part.strip()
+            if p:
+                server_parts.add(p)
+
+    def _is_server_part(token: str) -> bool:
+        return token.lower() in server_parts
 
     def add_db(name: str) -> None:
         name = name.strip("`")
@@ -166,6 +181,7 @@ def _extract_identifiers(text: str) -> tuple[list[str], list[str]]:
             name
             and name.lower() not in seen_dbs
             and name.lower() not in KNOWN_OBJECTS
+            and not _is_server_part(name)
         ):
             seen_dbs.add(name.lower())
             dbs.append(name)
@@ -177,6 +193,8 @@ def _extract_identifiers(text: str) -> tuple[list[str], list[str]]:
             tables.append(name)
 
     # 1. Квалифицированные имена db.table / `db`.`table`.
+    #    Пропускаем hostname-подобные цепочки (p7ru4.tradesoft.ru):
+    #    если совпадение граничит с ещё одной точкой, оно — часть hostname.
     plain = re.sub(
         r"`?[A-Za-z0-9_]+`?\s*\.\s*`?[A-Za-z0-9_]+`?",
         " ",
@@ -186,6 +204,10 @@ def _extract_identifiers(text: str) -> tuple[list[str], list[str]]:
         r"`?([A-Za-z0-9_]+)`?\s*\.\s*`?([A-Za-z0-9_]+)`?",
         text,
     ):
+        start = m.start()
+        end = m.end()
+        if (start > 0 and text[start - 1] == '.') or (end < len(text) and text[end] == '.'):
+            continue  # часть hostname (p7ru4.tradesoft.ru)
         add_db(m.group(1))
         add_table(m.group(2))
 
@@ -221,6 +243,7 @@ def _extract_identifiers(text: str) -> tuple[list[str], list[str]]:
             token in STOPWORDS
             or token in SQL_KEYWORDS
             or token in KNOWN_OBJECTS
+            or _is_server_part(token)
         ):
             continue
         if "_" in token:
@@ -442,7 +465,8 @@ def assist(text: str, context: dict | None = None) -> AssistantSuggestion | None
     if intent is None:
         return None
 
-    dbs, tables = _extract_identifiers(text)
+    server = (context.get("server") or "").strip()
+    dbs, tables = _extract_identifiers(text, server=server)
 
     setting_term = None
     if intent == "settings_search":
