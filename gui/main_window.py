@@ -669,20 +669,7 @@ class MainWindow(QWidget):
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search server, DB, table…")
-
-        search_clear_layout = QHBoxLayout()
-        search_clear_layout.setContentsMargins(0, 0, 0, 0)
-        search_clear_layout.setSpacing(4)
-        search_clear_layout.addWidget(self.search, 1)
-
-        self.btn_search_clear = QToolButton()
-        self.btn_search_clear.setObjectName("btn_icon")
-        self.btn_search_clear.setIcon(icon("close"))
-        self.btn_search_clear.setIconSize(QSize(16, 16))
-        self.btn_search_clear.setToolTip("Clear search")
-        search_clear_layout.addWidget(self.btn_search_clear)
-
-        server_layout.addLayout(search_clear_layout)
+        server_layout.addWidget(self.search)
 
         buttons = QHBoxLayout()
 
@@ -773,7 +760,7 @@ class MainWindow(QWidget):
         self.result_search.setPlaceholderText(
             "Filter by selected column..."
         )
-
+        self.result_search.setClearButtonEnabled(True)
         filter_layout.addWidget(
             self.result_search,
             1,
@@ -798,13 +785,7 @@ class MainWindow(QWidget):
 
         filter_layout.addWidget(self.chk_only_errors)
 
-        self.btn_filter_clear = QToolButton()
-        self.btn_filter_clear.setObjectName("btn_icon")
-        self.btn_filter_clear.setIcon(icon("close"))
-        self.btn_filter_clear.setIconSize(QSize(16, 16))
-        self.btn_filter_clear.setToolTip("Reset filters")
-
-        filter_layout.addWidget(self.btn_filter_clear)
+        # убрать текстовую кнопку Reset Filters — очищение слева в текстовом поле
 
         table_layout.addLayout(filter_layout)
 
@@ -1156,13 +1137,6 @@ class MainWindow(QWidget):
         )
         search_row.addWidget(self.ed_search_mask, 1)
 
-        self.btn_mask_clear = QToolButton()
-        self.btn_mask_clear.setObjectName("btn_icon")
-        self.btn_mask_clear.setIcon(icon("close"))
-        self.btn_mask_clear.setIconSize(QSize(16, 16))
-        self.btn_mask_clear.setToolTip("Clear mask")
-        search_row.addWidget(self.btn_mask_clear)
-
         self.btn_search = QPushButton("Найти БД")
         self.btn_search.setObjectName("btn_primary")
         self.btn_search.setToolTip("Найти БД по маске на серверах")
@@ -1229,9 +1203,7 @@ class MainWindow(QWidget):
             self._filter_servers
         )
 
-        self.btn_search_clear.clicked.connect(
-            self.search.clear
-        )
+        # clear via built-in clear button in search field
 
         self.btn_log_clear.clicked.connect(
             self.log.clear
@@ -1285,9 +1257,7 @@ class MainWindow(QWidget):
             self._search_run
         )
 
-        self.btn_mask_clear.clicked.connect(
-            self.ed_search_mask.clear
-        )
+        # clear via built-in clear button in mask field
 
         self.btn_search_stop.clicked.connect(
             self._search_stop
@@ -1347,7 +1317,7 @@ class MainWindow(QWidget):
         self._update_only_errors_visibility()
 
         self.result_search.textChanged.connect(
-            self._filter_results
+            self._on_result_search_changed
         )
 
         self.chk_only_errors.toggled.connect(
@@ -1362,9 +1332,7 @@ class MainWindow(QWidget):
             self._filter_results
         )
 
-        self.btn_filter_clear.clicked.connect(
-            self._clear_filters
-        )
+        # фильтры очищаются через встроенную кнопку clear в поле result_search
 
         self._repopulate_filter_column()
     # --------------------------------------------------------------
@@ -1666,6 +1634,9 @@ class MainWindow(QWidget):
 
     def _add_table_row(self, values: list[str], status_col: int | None = None):
         """Вставляет строку в self.table и применяет раскраску статуса."""
+        if not self.tabs_frame.isVisible():
+            self._toggle_results_panel(True)
+
         table = self.table
         row = table.rowCount()
         table.insertRow(row)
@@ -2084,6 +2055,9 @@ class MainWindow(QWidget):
         self._repopulate_filter_column()
         self._filter_results()
         self._sql_busy(False)
+        # Авто-показ блока Results по завершении запроса
+        if not self.action_toggle_results.isChecked():
+            self.action_toggle_results.setChecked(True)
 
     def _sql_target_started(self, index, total, host, database):
 
