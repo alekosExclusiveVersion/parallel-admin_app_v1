@@ -56,6 +56,7 @@ from backend.query_worker import ALL_DATABASES, QueryWorker
 from backend.db_search_worker import DatabaseSearchWorker
 from backend.db_sizes_worker import DbSizesWorker
 from common.sql_builder import sql_builder
+from common.sql_splitter import split_statements, statement_at
 from common.version import APP_VERSION
 from gui.icons import icon
 from gui.sql_highlighter import SQLHighlighter
@@ -1034,12 +1035,6 @@ class MainWindow(QWidget):
 
         scontrols.addStretch()
 
-        self.btn_sql_run = QPushButton("Run")
-        self.btn_sql_run.setObjectName("btn_primary")
-        self.btn_sql_run.setToolTip("Run query (Ctrl+Enter)")
-
-        scontrols.addWidget(self.btn_sql_run)
-
         sql_console_layout.addLayout(scontrols)
 
         scope_row = QHBoxLayout()
@@ -1063,20 +1058,38 @@ class MainWindow(QWidget):
 
         scope_row.addStretch()
 
+        sql_console_layout.addLayout(scope_row)
+
+        # Ряд кнопок Run/Stop непосредственно над полем ввода SQL
+        run_row = QHBoxLayout()
+
+        run_row.addStretch()
+
+        self.btn_sql_run = QPushButton("Run")
+        self.btn_sql_run.setObjectName("btn_primary")
+        self.btn_sql_run.setToolTip(
+            "Run script (Cmd/Ctrl+Shift+Enter); "
+            "run selection or statement under cursor (Cmd/Ctrl+Enter)"
+        )
+
+        run_row.addWidget(self.btn_sql_run)
+
         self.btn_sql_stop = QPushButton("Stop")
         self.btn_sql_stop.setObjectName("btn_danger")
+        self.btn_sql_stop.setToolTip("Stop running query")
         self.btn_sql_stop.setEnabled(False)
 
-        scope_row.addWidget(self.btn_sql_stop)
+        run_row.addWidget(self.btn_sql_stop)
 
-        sql_console_layout.addLayout(scope_row)
+        sql_console_layout.addLayout(run_row)
 
         self.sql_editor = QPlainTextEdit()
         self.sql_editor.setLineWrapMode(
             QPlainTextEdit.NoWrap
         )
         self.sql_editor.setPlaceholderText(
-            "Write SQL query... Ctrl+Enter to run"
+            "Write SQL query... Cmd/Ctrl+Enter to run selection "
+            "or statement under cursor, Cmd/Ctrl+Shift+Enter to run all"
         )
         self.sql_editor.setTabStopDistance(40)
 
@@ -1281,10 +1294,19 @@ class MainWindow(QWidget):
         )
 
         self.sql_run_shortcut = QShortcut(
-            QKeySequence("Ctrl+Return"),
+            QKeySequence(Qt.CTRL | Qt.Key_Return),
             self,
         )
         self.sql_run_shortcut.activated.connect(
+            self._sql_run_context
+        )
+
+        # Cmd/Ctrl+Shift+Enter — выполнить весь скрипт
+        self.sql_run_all_shortcut = QShortcut(
+            QKeySequence(Qt.CTRL | Qt.SHIFT | Qt.Key_Return),
+            self,
+        )
+        self.sql_run_all_shortcut.activated.connect(
             self._sql_run
         )
 
@@ -1893,12 +1915,31 @@ class MainWindow(QWidget):
     # ----------------------------------------------------------
 
     def _sql_run(self):
+        """Выполнить весь скрипт из sql_editor (кнопка Run, Cmd+Shift+Enter)."""
+        self._run_sql(self.sql_editor.toPlainText())
+
+    def _sql_run_context(self):
+        """Cmd/Ctrl+Enter: выделенный фрагмент, иначе оператор под курсором."""
+        editor = self.sql_editor
+        text = editor.toPlainText()
+        cursor = editor.textCursor()
+
+        if cursor.hasSelection():
+            sql = cursor.selectedText()
+            # selectedText() возвращает символы U+2029 вместо переносов строк
+            sql = sql.replace("\u2029", "\n").strip()
+        else:
+            sql = statement_at(text, cursor.position()).strip()
+
+        self._run_sql(sql)
+
+    def _run_sql(self, sql: str):
 
         if self.query_thread.isRunning():
             self.lbl_sql_status.setText("A query is already running. Wait or press Stop.")
             return
 
-        sql = self.sql_editor.toPlainText().strip()
+        sql = sql.strip()
 
         if not sql:
             return
