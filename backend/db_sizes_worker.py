@@ -77,7 +77,3 @@ class DbSizesWorker(QObject):
                     self.error.emit(server, database, str(ex))
 
         self.finished.emit()
-
-
-if __name__ == "__main__":
-    print("DbSizesWorker loaded.")

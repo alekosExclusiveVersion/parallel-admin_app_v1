@@ -24,7 +24,7 @@ from common.config import config
 from common.logger import logger
 
 
-@dataclass(slots=True)
+@dataclass
 class WorkerResult:
     server: str
     success: bool

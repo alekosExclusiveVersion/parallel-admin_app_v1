@@ -179,22 +179,10 @@ class MySQLClient:
                 cur.execute(sql, params)
                 return cur.fetchall()
 
-    def execute(self, host: str, sql: str, database: str | None = None,
-                params: tuple[Any, ...] | None = None) -> int:
-        with self.connect(host, database) as conn:
-            with conn.cursor() as cur:
-                affected = cur.execute(sql, params)
-            conn.commit()
-            return affected
-
     def list_databases(self, host: str) -> list[str]:
-        rows = self.query(host, "SHOW DATABASES")
-        ignore = set(config.advanced.ignore_databases)
-        return [
-            list(r.values())[0]
-            for r in rows
-            if list(r.values())[0] not in ignore
-        ]
+        """Список БД на сервере с учётом фильтров (prefix/regex/ignore)."""
+        with self.connect(host) as conn:
+            return self.list_databases_conn(conn)
 
     def search_databases(self, host: str, mask: str) -> list[str]:
         """Поиск БД по маске в стиле LIKE (например 'ar_%45').
@@ -233,32 +221,9 @@ class MySQLClient:
         return bool(rows)
 
     def get_settings(self, host: str, database: str) -> dict[str, str]:
-        sql = f"""
-SELECT
-    stg_name,
-    stg_value
-FROM {sql_builder.quote_identifier(database)}.{sql_builder.quote_identifier(config.advanced.settings_table)}
-WHERE stg_name IN (%s,%s)
-"""
-        rows = self.query(
-            host,
-            sql,
-            database,
-            (
-                config.filter.country_setting,
-                config.filter.target_setting,
-            ),
-        )
-        return {r["stg_name"]: r["stg_value"] for r in rows}
-
-    def update_setting(self, host: str, database: str,
-                       name: str, value: str) -> int:
-        sql = f"""
-UPDATE {sql_builder.quote_identifier(database)}.{sql_builder.quote_identifier(config.advanced.settings_table)}
-SET stg_value=%s
-WHERE stg_name=%s
-"""
-        return self.execute(host, sql, database, (value, name))
+        """Возвращает country/target настройки БД по открытому соединению."""
+        with self.connect(host, database) as conn:
+            return self.get_settings_conn(conn, database)
 
     # ----------------------------------------------------------
     # Размеры БД и таблиц
@@ -309,17 +274,6 @@ ORDER BY total DESC
             if row.get("table_name")
         ]
 
-    def table_size(self, host: str, database: str, table: str) -> int:
-        """Размер конкретной таблицы (в байтах)."""
-        sql = f"""
-SELECT
-    (data_length + index_length) AS total
-FROM information_schema.tables
-WHERE table_schema = %s AND table_name = %s
-"""
-        rows = self.query(host, sql, database, (database, table))
-
-        return int(rows[0]["total"] or 0) if rows else 0
 
 mysql = MySQLClient()
 

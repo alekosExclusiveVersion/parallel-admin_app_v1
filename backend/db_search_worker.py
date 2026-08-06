@@ -37,7 +37,6 @@ class DatabaseSearchWorker(QObject):
     def stop(self):
         self._stop_requested = True
 
-    @Slot()
     def _search_server(self, server: str):
         """Поиск БД на одном сервере. Возвращает (server, databases, error)."""
         if self._stop_requested:

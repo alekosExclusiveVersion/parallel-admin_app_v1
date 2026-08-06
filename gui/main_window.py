@@ -37,7 +37,6 @@ from PySide6.QtWidgets import (
     QToolButton,
     QProgressBar,
     QLineEdit,
-    QSizePolicy,
     QCheckBox,
     QComboBox,
     QPushButton,
@@ -1448,15 +1447,6 @@ class MainWindow(QWidget):
             size /= 1024
         return f"{size:.1f} TB"
 
-    def _selected_server_names(self) -> list[str]:
-        names = []
-        for item in self.server_list.selectedItems():
-            if self._is_server_item(item):
-                name = self._server_name(item)
-                if name and name not in names:
-                    names.append(name)
-        return names
-
     def _reset_server_sizes(self):
         """Сбрасывает загруженные размеры БД/таблиц, чтобы при
         следующем раскрытии узла подтянулись свежие данные."""
@@ -2461,17 +2451,6 @@ class MainWindow(QWidget):
             self.combo_filter_column.setCurrentIndex(0)
 
         self.combo_filter_column.blockSignals(False)
-
-    def _clear_filters(self):
-
-        self.result_search.clear()
-        self.chk_only_errors.setChecked(False)
-        self.combo_filter_mode.setCurrentText("Contains")
-
-        if self.combo_filter_column.count():
-            self.combo_filter_column.setCurrentIndex(0)
-
-        self._filter_results()
 
     def _on_result_search_changed(self):
         """Debounce-обработчик изменения текста в поле фильтра результатов.

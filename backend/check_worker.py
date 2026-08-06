@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from concurrent.futures import (
     ThreadPoolExecutor,
     as_completed,
@@ -45,8 +44,6 @@ class CheckWorker(QObject):
 
         return self._servers
 
-    @Slot()
-    
     def _check_server(self, server: str):
 
         results = []
@@ -56,11 +53,11 @@ class CheckWorker(QObject):
             return results, messages
 
         try:
-            
+
             messages.append(
                 f"{server}: connecting..."
             )
-            
+
             with mysql.connect(server) as conn:
 
                 databases = mysql.list_databases_conn(conn)
@@ -76,20 +73,18 @@ class CheckWorker(QObject):
                 )
             )
 
-            executor = ThreadPoolExecutor(
+            with ThreadPoolExecutor(
                 max_workers=config.parallel.database_workers,
-            )
+            ) as executor:
 
-            futures = {
-                executor.submit(
-                    self._check_batch,
-                    server,
-                    batch,
-                ): batch
-                for batch in batches
-            }
-
-            try:
+                futures = {
+                    executor.submit(
+                        self._check_batch,
+                        server,
+                        batch,
+                    ): batch
+                    for batch in batches
+                }
 
                 for future in as_completed(futures):
 
@@ -106,12 +101,8 @@ class CheckWorker(QObject):
 
                     messages.extend(messages_batch)
 
-            finally:
-
-                executor.shutdown(wait=True)
-
         except Exception as ex:
-            
+
             messages.append(
                 f"{server}: {ex}"
             )
@@ -126,11 +117,9 @@ class CheckWorker(QObject):
                     str(ex),
                 )
             )
-    
+
         return results, messages
     
-    @Slot()
-
     def _check_batch(
         self,
         server: str,
@@ -169,39 +158,55 @@ class CheckWorker(QObject):
                 f"retrying per database ({ex})"
             )
 
-            for database in databases:
+            # Fallback: одно соединение для всей пачки, чтобы не
+            # открывать новое подключение на каждую БД.
+            try:
+                with mysql.connect(server) as conn:
+                    for database in databases:
+                        try:
+                            settings = mysql.get_settings_conn(
+                                conn,
+                                database,
+                            )
 
-                try:
+                            rows.append(
+                                (
+                                    server,
+                                    database,
+                                    settings.get(
+                                        config.filter.country_setting,
+                                        "-",
+                                    ),
+                                    settings.get(
+                                        config.filter.target_setting,
+                                        "-",
+                                    ),
+                                    "OK",
+                                    "",
+                                )
+                            )
 
-                    with mysql.connect(
-                        server,
-                        database,
-                    ) as conn:
+                        except Exception as db_ex:
 
-                        settings = mysql.get_settings_conn(
-                            conn,
-                            database,
-                        )
+                            rows.append(
+                                (
+                                    server,
+                                    database,
+                                    "-",
+                                    "-",
+                                    "ERROR",
+                                    str(db_ex),
+                                )
+                            )
 
-                    rows.append(
-                        (
-                            server,
-                            database,
-                            settings.get(
-                                config.filter.country_setting,
-                                "-",
-                            ),
-                            settings.get(
-                                config.filter.target_setting,
-                                "-",
-                            ),
-                            "OK",
-                            "",
-                        )
-                    )
+                            messages.append(
+                                f"{server}/{database}: {db_ex}"
+                            )
 
-                except Exception as db_ex:
-
+            except Exception as conn_ex:
+                # Не удалось открыть даже одно соединение — помечаем
+                # все БД пачки ошибкой.
+                for database in databases:
                     rows.append(
                         (
                             server,
@@ -209,12 +214,8 @@ class CheckWorker(QObject):
                             "-",
                             "-",
                             "ERROR",
-                            str(db_ex),
+                            str(conn_ex),
                         )
-                    )
-
-                    messages.append(
-                        f"{server}/{database}: {db_ex}"
                     )
 
         return rows, messages
@@ -254,19 +255,17 @@ class CheckWorker(QObject):
 
         completed = 0
 
-        executor = ThreadPoolExecutor(
+        with ThreadPoolExecutor(
             max_workers=config.parallel.workers
-        )
+        ) as executor:
 
-        futures = {
-            executor.submit(
-                self._check_server,
-                server,
-            ): server
-            for server in self._servers
-        }
-
-        try:
+            futures = {
+                executor.submit(
+                    self._check_server,
+                    server,
+                ): server
+                for server in self._servers
+            }
 
             for future in as_completed(futures):
 
@@ -319,10 +318,6 @@ class CheckWorker(QObject):
                     completed,
                     total,
                 )
-
-        finally:
-
-            executor.shutdown(wait=True)
         
         if self._stop_requested:
 

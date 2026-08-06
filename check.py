@@ -13,7 +13,6 @@ SERVER | DATABASE | COUNTRY | TARGET_VALUE
 from __future__ import annotations
 
 import csv
-from pathlib import Path
 
 from common.config import config
 from common.logger import logger
