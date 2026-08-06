@@ -2054,6 +2054,11 @@ class MainWindow(QWidget):
         self.sql_editor.setPlainText(suggestion.sql)
         self.sql_editor.moveCursor(QTextCursor.End)
 
+        # multi-db size suggestion: clear DB selection for information_schema query
+        if suggestion.intent == "db_size" and len(suggestion.databases) > 1:
+            self.chk_all_databases.setChecked(False)
+            self.cb_database.setCurrentText("")
+
         self.append_log(
             "INFO",
             f"Помощник: {suggestion.title}",
