@@ -669,6 +669,7 @@ class MainWindow(QWidget):
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search server, DB, table…")
+        self.search.setClearButtonEnabled(True)
         server_layout.addWidget(self.search)
 
         buttons = QHBoxLayout()
@@ -1130,6 +1131,7 @@ class MainWindow(QWidget):
         self.ed_search_mask.setPlaceholderText(
             "Название БД, напр. ar_ru"
         )
+        self.ed_search_mask.setClearButtonEnabled(True)
         self.ed_search_mask.setToolTip(
             "Поиск по содержимому имени БД. "
             "Символы % вводить не нужно — поиск выполняется "
