@@ -31,6 +31,7 @@ from backend.db_search_worker import DatabaseSearchWorker
 from backend.db_sizes_worker import DbSizesWorker
 from common.sql_builder import sql_builder
 from common.sql_security import is_write_statement
+from common.sql_splitter import split_statements
 from common.version import APP_VERSION
 from common.mysql_client import mysql
 from gui.icons import icon
@@ -1010,6 +1011,10 @@ class MainWindow(QWidget):
         sql = sql.strip()
 
         if not sql:
+            return
+
+        if not split_statements(sql):
+            self.lbl_sql_status.setText("No SQL statements to run.")
             return
 
         targets = self._sql_build_targets()

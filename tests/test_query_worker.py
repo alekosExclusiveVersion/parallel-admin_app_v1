@@ -1,8 +1,9 @@
 """
 tests/test_query_worker.py
 
-Тесты для backend/query_worker.py — отслеживание активного соединения
-и прерывание выполняющегося запроса через KILL.
+Тесты для backend/query_worker.py — отслеживание активного соединения,
+прерывание выполняющегося запроса через KILL, выполнение скриптов
+из нескольких операторов и остановка между ними.
 """
 
 import time
@@ -44,12 +45,36 @@ class FakeConn:
         return self._cursor
 
 
+class FakeResultCursor:
+    """Курсор с результирующим набором DictCursor-стиля."""
+
+    def __init__(self, columns, rows, rowcount=None):
+        self.description = [(c,) for c in columns]
+        self._rows = rows
+        self.rowcount = len(rows) if rowcount is None else rowcount
+        self.executed = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def execute(self, sql):
+        self.executed.append(sql)
+
+    def fetchmany(self, size):
+        out, self._rows = self._rows[:size], self._rows[size:]
+        return out
+
+
 class FakeMySQL:
     def __init__(self):
         self.killed = []
+        self.conn = FakeConn()
 
     def connect(self, host, database=None):
-        return FakeConn()
+        return self.conn
 
     def kill_connection(self, host, connection_id):
         self.killed.append((host, connection_id))
@@ -68,7 +93,7 @@ class TestQueryWorkerKill(unittest.TestCase):
 
         thread = threading.Thread(
             target=worker._execute_sql,
-            args=("host1", "db1", "SELECT sleep(10)", 1000),
+            args=("host1", "db1", ["SELECT sleep(10)"], 1000),
         )
         thread.start()
 
@@ -88,12 +113,130 @@ class TestQueryWorkerKill(unittest.TestCase):
 
     def test_active_id_cleared_after_execution(self):
         worker = qw.QueryWorker()
-        worker.set_request("host1", "db1", "SELECT 1", 1000)
+        worker.set_request("host1", "db1", "UPDATE t SET a = 1", 1000)
 
-        worker._execute_sql("host1", "db1", "UPDATE t SET a = 1", 1000)
+        worker._execute_sql("host1", "db1", ["UPDATE t SET a = 1"], 1000)
 
         self.assertIsNone(worker._active_id)
         self.assertEqual(worker._active_host, "")
+
+
+class TestQueryWorkerScript(unittest.TestCase):
+    def setUp(self):
+        self.fake = FakeMySQL()
+        patcher = patch.object(qw, "mysql", self.fake)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_set_request_splits_script_into_statements(self):
+        worker = qw.QueryWorker()
+        worker.set_request(
+            "h", "db",
+            "SELECT 1; -- comment\nSELECT 2;\nUPDATE t SET a=1",
+            1000,
+        )
+        self.assertEqual(worker._statements, [
+            "SELECT 1",
+            "SELECT 2",
+            "UPDATE t SET a=1",
+        ])
+
+    def test_set_request_empty_and_comments_only(self):
+        worker = qw.QueryWorker()
+        worker.set_request("h", "db", "  -- just a comment\n# another", 1000)
+        self.assertEqual(worker._statements, [])
+
+    def test_execute_runs_all_statements_and_merges_rows(self):
+        cursors = [
+            FakeResultCursor(["id", "name"], [{"id": 1, "name": "a"}]),
+            FakeResultCursor(["id", "name"], [{"id": 2, "name": "b"}]),
+            FakeResultCursor(["id", "name"], [], rowcount=2),
+        ]
+
+        class ScriptConn:
+            def __init__(self):
+                self._q = list(cursors)
+                self._id = 7
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def thread_id(self):
+                return self._id
+
+            def cursor(self):
+                return self._q.pop(0)
+
+        self.fake.conn = ScriptConn()
+        worker = qw.QueryWorker()
+        worker.set_request("h", "db", "SELECT 1; SELECT 2; UPDATE t SET a=1", 1000)
+
+        rows, columns, message = worker._execute_sql(
+            "h", "db", worker._statements, 1000,
+        )
+
+        self.assertEqual(columns, ["id", "name"])
+        self.assertEqual(rows, [["1", "a"], ["2", "b"]])
+        self.assertIn("row(s)", message)
+        self.assertEqual(
+            [cur.executed for cur in cursors][:2],
+            [["SELECT 1"], ["SELECT 2"]],
+        )
+
+    def test_execute_stops_between_statements(self):
+        cursors = [
+            FakeResultCursor(["id"], [{"id": 1}]),
+            FakeResultCursor(["id"], [{"id": 2}]),
+        ]
+
+        class ScriptConn:
+            def __init__(self):
+                self._q = list(cursors)
+                self._id = 7
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def thread_id(self):
+                return self._id
+
+            def cursor(self):
+                return self._q.pop(0)
+
+        self.fake.conn = ScriptConn()
+        worker = qw.QueryWorker()
+        worker.set_request("h", "db", "SELECT 1; SELECT 2", 1000)
+
+        worker._stop = True
+
+        rows, columns, message = worker._execute_sql(
+            "h", "db", worker._statements, 1000,
+        )
+
+        self.assertEqual(rows, [])
+        self.assertEqual(cursors[1].executed, [])
+        self.assertIn("No statements executed", message)
+
+    def test_combine_skips_mismatched_columns(self):
+        per_statement = [
+            (["id"], [["1"]], "1 row(s) of 1"),
+            (["other"], [["x"]], "1 row(s) of 1"),
+            ([], [], "3 row(s) affected"),
+        ]
+        rows, columns, message = qw.QueryWorker._combine_results(
+            per_statement, 1.5,
+        )
+
+        self.assertEqual(columns, ["id"])
+        self.assertEqual(rows, [["1"]])
+        self.assertIn("skipped", message)
+        self.assertIn("row(s) affected", message)
 
 
 if __name__ == "__main__":
