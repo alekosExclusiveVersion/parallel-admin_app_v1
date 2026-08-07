@@ -223,6 +223,10 @@ class MainWindow(QWidget):
             self.servers_tree.apply_sizes
         )
 
+        self.sizes_worker.server_tables.connect(
+            self.servers_tree.apply_server_tables
+        )
+
         self.sizes_worker.tables.connect(
             self.servers_tree.apply_tables
         )
@@ -386,9 +390,9 @@ class MainWindow(QWidget):
 
         self._started_at = None
 
-        # Сбрасываем кэшированные размеры БД/таблиц,
-        # чтобы при следующем раскрытии узлов были свежие данные.
-        self.servers_tree.reset_sizes()
+        # Неразрушающее обновление размеров раскрытых серверов:
+        # дерево остаётся раскрытым, свежие данные приходят в фоне.
+        self._refresh_expanded_sizes()
 
     # ----------------------------------------------------------
     # UI
@@ -1467,9 +1471,21 @@ class MainWindow(QWidget):
 
         self.progress.setValue(0)
 
-        # Сбрасываем кэшированные размеры БД/таблиц,
-        # чтобы при следующем раскрытии узлов были свежие данные.
-        self.servers_tree.reset_sizes()
+        # Неразрушающее обновление размеров раскрытых серверов:
+        # дерево остаётся раскрытым, свежие данные приходят в фоне.
+        self._refresh_expanded_sizes()
+
+    def _refresh_expanded_sizes(self):
+        """Обновляет размеры/таблицы раскрытых серверов в фоне,
+        не сбрасывая раскрытое состояние дерева."""
+        expanded = [
+            self.servers_tree.server_name(self.servers_tree.topLevelItem(i))
+            for i in range(self.servers_tree.topLevelItemCount())
+            if self.servers_tree.topLevelItem(i).isExpanded()
+        ]
+
+        if expanded:
+            self.sizes_worker.refresh_sizes(expanded)
 
     def _search_progress(self, current, total):
         self._update_progress(current, total)

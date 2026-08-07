@@ -55,6 +55,11 @@ class ServersTree(QTreeWidget):
         self.itemDoubleClicked.connect(self._double_click)
         self.itemSelectionChanged.connect(self.selectionChangedNotify)
 
+        # Кэш таблиц по серверам: {server: {db: [(table, size)]}}.
+        # Заполняется при раскрытии сервера одним запросом, чтобы
+        # раскрытие БД не требовало отдельного запроса на каждую БД.
+        self._tables_cache: dict[str, dict[str, list]] = {}
+
     # ----------------------------------------------------------
     # Утилиты узлов
     # ----------------------------------------------------------
@@ -138,6 +143,8 @@ class ServersTree(QTreeWidget):
     def reset_sizes(self) -> None:
         """Сбрасывает загруженные размеры, чтобы при следующем
         раскрытии узла подтянулись свежие данные."""
+        self._tables_cache.clear()
+
         for index in range(self.topLevelItemCount()):
             item = self.topLevelItem(index)
             server = self.server_name(item)
@@ -224,6 +231,29 @@ class ServersTree(QTreeWidget):
                 )
             break
 
+    def apply_server_tables(self, server: str, tables: dict) -> None:
+        """Кэширует таблицы всех БД сервера (получены одним запросом).
+
+        Узлы БД не заполняются сразу — таблицы появятся мгновенно
+        при раскрытии БД из кэша, без отдельного запроса.
+        """
+        self._tables_cache[server] = tables or {}
+
+    def _populate_tables(self, db_item: QTreeWidgetItem, tables: list) -> None:
+        db_item.takeChildren()
+
+        if not tables:
+            QTreeWidgetItem(db_item, [_NO_TABLES])
+            return
+
+        for table_name, table_size in tables:
+            table_item = QTreeWidgetItem(
+                db_item,
+                [f"{table_name}  ({self.format_size(table_size)})"],
+            )
+            table_item.setData(0, Qt.UserRole, table_name)
+            table_item.setIcon(0, icon("grid_on", 16, "#16a34a"))
+
     def apply_tables(self, server: str, database: str, tables: list) -> None:
         for index in range(self.topLevelItemCount()):
             server_item = self.topLevelItem(index)
@@ -235,19 +265,7 @@ class ServersTree(QTreeWidget):
                 if self.db_name(db_item) != database:
                     continue
 
-                db_item.takeChildren()
-
-                if not tables:
-                    QTreeWidgetItem(db_item, [_NO_TABLES])
-                    break
-
-                for table_name, table_size in tables:
-                    table_item = QTreeWidgetItem(
-                        db_item,
-                        [f"{table_name}  ({self.format_size(table_size)})"],
-                    )
-                    table_item.setData(0, Qt.UserRole, table_name)
-                    table_item.setIcon(0, icon("grid_on", 16, "#16a34a"))
+                self._populate_tables(db_item, tables)
                 break
             break
 
@@ -308,8 +326,17 @@ class ServersTree(QTreeWidget):
     def _load_db_children(self, item: QTreeWidgetItem) -> None:
         if not self._needs_load(item):
             return
+
         server = self.server_name(item.parent())
         database = self.db_name(item)
+
+        # Таблицы БД уже получены при раскрытии сервера — показываем
+        # мгновенно, без запроса.
+        cached = self._tables_cache.get(server, {}).get(database)
+        if cached is not None:
+            self._populate_tables(item, cached)
+            return
+
         self.tablesRequested.emit(server, database)
 
     def _needs_load(self, item: QTreeWidgetItem) -> bool:

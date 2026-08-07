@@ -1,9 +1,11 @@
 """
 tests/test_servers_tree.py
 
-Тесты двухфазной загрузки БД для дерева серверов:
-сначала быстрые имена БД (SHOW DATABASES), затем размеры,
-которые дописываются к уже показанным узлам.
+Тесты двухфазной загрузки для дерева серверов:
+- имена БД (SHOW DATABASES) показываются сразу, размеры и таблицы
+  приходят одним запросом (server_catalog) и дописываются к узлам;
+- кэш таблиц сервера позволяет раскрывать БД без отдельного запроса;
+- refresh_sizes обновляет данные без сброса дерева.
 """
 
 import os
@@ -22,17 +24,46 @@ class FakeSizesMySQL:
     def __init__(self):
         self.databases = ["ar_a", "ar_b"]
         self.sizes = {"ar_a": 1000, "ar_b": 2000}
+        self.tables = {
+            "ar_a": [("t1", 600), ("t2", 400)],
+            "ar_b": [("t3", 2000)],
+        }
 
     def list_all_databases(self, server):
         return list(self.databases)
 
-    def database_sizes(self, server):
-        return dict(self.sizes)
+    def server_catalog(self, server):
+        return dict(self.sizes), {
+            db: list(t) for db, t in self.tables.items()
+        }
+
+    def database_table_sizes(self, server, database):
+        return list(self.tables.get(database, []))
 
 
 class TestDbSizesWorker(unittest.TestCase):
-    def test_request_databases_emits_names_then_sizes(self):
-        fake = FakeSizesMySQL()
+    def setUp(self):
+        self.fake = FakeSizesMySQL()
+        self.patcher = patch.object(dw.mysql, "list_all_databases",
+                                    self.fake.list_all_databases)
+        self.patcher.start()
+        self.addCleanup(self.patcher.stop)
+
+    def _patch_catalog(self, side_effect=None, table_effect=None):
+        patchers = [
+            patch.object(dw.mysql, "server_catalog",
+                         side_effect if side_effect
+                         else self.fake.server_catalog),
+            patch.object(dw.mysql, "database_table_sizes",
+                         table_effect if table_effect
+                         else self.fake.database_table_sizes),
+        ]
+        for p in patchers:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_request_databases_emits_names_sizes_tables(self):
+        self._patch_catalog()
         worker = dw.DbSizesWorker()
         events = []
 
@@ -42,18 +73,23 @@ class TestDbSizesWorker(unittest.TestCase):
         worker.databases.connect(
             lambda s, d: events.append(("sizes", s, d))
         )
+        worker.server_tables.connect(
+            lambda s, t: events.append(("tables", s, t))
+        )
 
-        with patch.object(dw.mysql, "list_all_databases", fake.list_all_databases), \
-             patch.object(dw.mysql, "database_sizes", fake.database_sizes):
-            worker.request_databases(["srv1"])
+        worker.request_databases(["srv1"])
 
-        self.assertEqual(events[0][0], "names")
+        kinds = [e[0] for e in events]
+        self.assertEqual(kinds[:3], ["names", "sizes", "tables"])
         self.assertEqual(events[0][2], ["ar_a", "ar_b"])
-        self.assertEqual(events[1][0], "sizes")
         self.assertEqual(events[1][2], {"ar_a": 1000, "ar_b": 2000})
+        self.assertEqual(events[2][2], self.fake.tables)
 
-    def test_sizes_failure_still_shows_names(self):
-        fake = FakeSizesMySQL()
+    def test_catalog_failure_still_shows_names(self):
+        def boom(server):
+            raise RuntimeError("boom")
+
+        self._patch_catalog(side_effect=boom)
         worker = dw.DbSizesWorker()
         events = []
 
@@ -62,27 +98,34 @@ class TestDbSizesWorker(unittest.TestCase):
         )
         worker.error.connect(lambda *a: events.append(("error", a)))
 
-        with patch.object(dw.mysql, "list_all_databases", fake.list_all_databases), \
-             patch.object(dw.mysql, "database_sizes",
-                          side_effect=RuntimeError("boom")):
-            worker.request_databases(["srv1"])
+        worker.request_databases(["srv1"])
 
         self.assertEqual(events[0][0], "names")
         self.assertTrue(any(e[0] == "error" for e in events))
 
-    def test_names_failure_emits_error_only(self):
+    def test_refresh_sizes_emits_sizes_and_tables(self):
+        self._patch_catalog()
         worker = dw.DbSizesWorker()
         events = []
 
-        worker.databases_names.connect(lambda *a: events.append(("names", a)))
-        worker.error.connect(lambda *a: events.append(("error", a)))
+        worker.databases.connect(lambda s, d: events.append(("sizes", s)))
+        worker.server_tables.connect(lambda s, t: events.append(("tables", s)))
 
-        with patch.object(dw.mysql, "list_all_databases",
-                          side_effect=RuntimeError("boom")):
-            worker.request_databases(["srv1"])
+        worker.refresh_sizes(["srv1"])
 
-        self.assertTrue(any(e[0] == "error" for e in events))
-        self.assertFalse(any(e[0] == "names" for e in events))
+        self.assertEqual([e[0] for e in events], ["sizes", "tables"])
+
+    def test_request_tables_fallback(self):
+        self._patch_catalog()
+        worker = dw.DbSizesWorker()
+        events = []
+
+        worker.tables.connect(lambda *a: events.append(("tables", a)))
+
+        worker.request_tables("srv1", "ar_b")
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0][1], ("srv1", "ar_b", [("t3", 2000)]))
 
     def test_stop_prevents_processing(self):
         worker = dw.DbSizesWorker()
@@ -118,6 +161,46 @@ class TestServersTree(unittest.TestCase):
         # узлы не пересоздавались — placeholder таблиц сохранён
         self.assertEqual(srv.child(0).childCount(), 1)
         self.assertEqual(srv.child(0).child(0).text(0), "…")
+
+    def test_db_expand_uses_tables_cache(self):
+        tree = ServersTree()
+        tree.set_servers(["srv1"])
+        srv = tree.topLevelItem(0)
+
+        requests = []
+        tree.tablesRequested.connect(
+            lambda s, d: requests.append((s, d))
+        )
+
+        tree.apply_databases("srv1", ["ar_a", "ar_b"])
+        tree.apply_server_tables("srv1", {
+            "ar_a": [("t1", 600), ("t2", 400)],
+            "ar_b": [("t3", 2000)],
+        })
+
+        db = srv.child(0)
+        db.setExpanded(True)
+
+        self.assertEqual(requests, [], "запросов к таблицам быть не должно")
+        self.assertEqual(db.childCount(), 2)
+        self.assertEqual(tree.table_name(db.child(0)), "t1")
+        self.assertEqual(db.child(0).text(0), "t1  (600.0 B)")
+
+    def test_db_expand_without_cache_requests_tables(self):
+        tree = ServersTree()
+        tree.set_servers(["srv1"])
+        srv = tree.topLevelItem(0)
+
+        requests = []
+        tree.tablesRequested.connect(
+            lambda s, d: requests.append((s, d))
+        )
+
+        tree.apply_databases("srv1", ["ar_a"])
+        db = srv.child(0)
+        db.setExpanded(True)
+
+        self.assertEqual(requests, [("srv1", "ar_a")])
 
     def test_apply_sizes_without_names_builds_children(self):
         tree = ServersTree()

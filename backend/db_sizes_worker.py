@@ -22,10 +22,11 @@ from common.mysql_client import mysql
 
 
 class DbSizesWorker(QObject):
-    databases_names = Signal(str, list)  # server, [db_names]
-    databases = Signal(str, dict)        # server, {db: size_bytes}
-    tables = Signal(str, str, list)      # server, database, [(table, size_bytes)]
-    error = Signal(str, str, str)        # server, context, message
+    databases_names = Signal(str, list)   # server, [db_names]
+    databases = Signal(str, dict)         # server, {db: size_bytes}
+    server_tables = Signal(str, dict)     # server, {db: [(table, size_bytes)]}
+    tables = Signal(str, str, list)       # server, database, [(table, size_bytes)]
+    error = Signal(str, str, str)         # server, context, message
     finished = Signal()
 
     def __init__(self):
@@ -51,8 +52,7 @@ class DbSizesWorker(QObject):
             if self._stop:
                 break
 
-            # Сначала мгновенно показываем имена БД (быстрый SHOW DATABASES),
-            # затем размеры подгружаются тяжёлым запросом и обновляют текст.
+            # 1) Имена БД — мгновенно (быстрый SHOW DATABASES).
             try:
                 names = mysql.list_all_databases(server)
             except Exception as ex:
@@ -61,16 +61,42 @@ class DbSizesWorker(QObject):
 
             self.databases_names.emit(server, names)
 
+            # 2) Размеры + таблицы — одним запросом к information_schema.
             try:
-                sizes = mysql.database_sizes(server)
+                sizes, tables = mysql.server_catalog(server)
             except Exception as ex:
                 self.error.emit(server, "databases", str(ex))
                 continue
 
             self.databases.emit(server, sizes)
+            self.server_tables.emit(server, tables)
+
+    @Slot(list)
+    def refresh_sizes(self, servers: list[str]):
+        """Неразрушающее обновление данных раскрытых серверов.
+
+        Используется после check/search: размеры обновляются в тексте
+        узлов (apply_sizes) и кэш таблиц обновляется (apply_server_tables),
+        при этом раскрытое состояние дерева сохраняется.
+        """
+        if self._stop:
+            return
+
+        for server in servers:
+            if self._stop:
+                break
+            try:
+                sizes, tables = mysql.server_catalog(server)
+            except Exception as ex:
+                self.error.emit(server, "refresh", str(ex))
+                continue
+
+            self.databases.emit(server, sizes)
+            self.server_tables.emit(server, tables)
 
     @Slot(str, str)
     def request_tables(self, server: str, database: str):
+        """Фолбэк: загрузка таблиц одной БД (если в кэше сервера их нет)."""
         if self._stop:
             return
 

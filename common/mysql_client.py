@@ -510,6 +510,47 @@ class MySQLClient:
             with conn.cursor() as cur:
                 cur.execute(f"KILL {int(connection_id)}")
 
+    def server_catalog(
+        self,
+        host: str,
+    ) -> tuple[dict[str, int], dict[str, list[tuple[str, int]]]]:
+        """Размеры всех БД и полный список таблиц сервера одним запросом.
+
+        Возвращает (sizes, tables):
+          sizes — {db: суммарный размер в байтах};
+          tables — {db: [(table_name, размер в байтах)]} по убыванию размера.
+
+        Используется при раскрытии сервера, чтобы показывать таблицы
+        мгновенно (без отдельного запроса на каждую БД).
+        """
+        sql = """
+SELECT
+    table_schema AS db,
+    table_name AS table_name,
+    (data_length + index_length) AS total
+FROM information_schema.tables
+WHERE table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
+ORDER BY table_schema, total DESC
+"""
+        rows = self.query(host, sql)
+
+        sizes: dict[str, int] = {}
+        tables: dict[str, list[tuple[str, int]]] = {}
+
+        for row in rows:
+            db = row.get("db")
+            if not db:
+                continue
+
+            size = int(row.get("total") or 0)
+            sizes[db] = sizes.get(db, 0) + size
+
+            table_name = row.get("table_name")
+            if table_name:
+                tables.setdefault(db, []).append((table_name, size))
+
+        return sizes, tables
+
     def database_sizes(self, host: str) -> dict[str, int]:
         """Суммарный размер (в байтах) по каждой БД на сервере.
 
