@@ -10,8 +10,8 @@ gui/sql_console.py
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QFontDatabase, QKeySequence, QShortcut
+from PySide6.QtCore import QRect, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFontDatabase, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -39,6 +39,93 @@ class ComboItemDelegate(QStyledItemDelegate):
             size.width() + 24,
             max(size.height() + 12, 34),
         )
+
+
+class LineNumberArea(QWidget):
+    """Полоса с номерами строк слева от редактора SQL."""
+
+    def __init__(self, editor: "SqlEditor") -> None:
+        super().__init__(editor)
+        self._editor = editor
+
+    def sizeHint(self) -> QSize:
+        return QSize(self._editor.line_number_area_width(), 0)
+
+    def paintEvent(self, event) -> None:
+        self._editor.line_number_area_paint_event(event)
+
+
+class SqlEditor(QPlainTextEdit):
+    """Редактор SQL с нумерацией строк и подсветкой текущей строки."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._line_number_area = LineNumberArea(self)
+
+        self.blockCountChanged.connect(self._update_line_number_area_width)
+        self.updateRequest.connect(self._update_line_number_area)
+        self._update_line_number_area_width()
+
+    def line_number_area_width(self) -> int:
+        digits = len(str(max(1, self.blockCount())))
+        return 14 + self.fontMetrics().horizontalAdvance("9") * digits
+
+    def _update_line_number_area_width(self) -> None:
+        self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
+
+    def _update_line_number_area(self, rect, dy) -> None:
+        if dy:
+            self._line_number_area.scroll(0, dy)
+        else:
+            self._line_number_area.update(
+                0, rect.y(), self._line_number_area.width(), rect.height(),
+            )
+
+        if rect.contains(self.viewport().rect()):
+            self._update_line_number_area_width()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        cr = self.contentsRect()
+        self._line_number_area.setGeometry(
+            QRect(cr.left(), cr.top(), self.line_number_area_width(), cr.height()),
+        )
+
+    def line_number_area_paint_event(self, event) -> None:
+        painter = QPainter(self._line_number_area)
+        painter.fillRect(event.rect(), QColor("#f8fafc"))
+        painter.setPen(QColor("#e3e8ef"))
+        x = self._line_number_area.width() - 1
+        painter.drawLine(x, event.rect().top(), x, event.rect().bottom())
+
+        block = self.firstVisibleBlock()
+        block_number = block.blockNumber()
+        offset = self.contentOffset()
+        top = round(self.blockBoundingGeometry(block).translated(offset).top())
+        bottom = top + round(self.blockBoundingRect(block).height())
+
+        current = self.textCursor().blockNumber()
+        width = self._line_number_area.width() - 8
+
+        while block.isValid() and top <= event.rect().bottom():
+            if block.isVisible() and bottom >= event.rect().top():
+                number = str(block_number + 1)
+                if block_number == current:
+                    painter.setPen(QColor("#2563eb"))
+                    font = painter.font()
+                    font.setBold(True)
+                    painter.setFont(font)
+                else:
+                    painter.setPen(QColor("#94a3b8"))
+                painter.drawText(
+                    0, top, width, self.fontMetrics().height(),
+                    Qt.AlignRight, number,
+                )
+
+            block = block.next()
+            top = bottom
+            bottom = top + round(self.blockBoundingRect(block).height())
+            block_number += 1
 
 
 class SqlConsolePanel(QWidget):
@@ -166,7 +253,7 @@ class SqlConsolePanel(QWidget):
 
         layout.addLayout(run_row)
 
-        self.editor = QPlainTextEdit()
+        self.editor = SqlEditor()
         self.editor.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.editor.setPlaceholderText(
             "Write SQL query... Cmd/Ctrl+Enter to run selection "
