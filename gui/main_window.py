@@ -215,6 +215,10 @@ class MainWindow(QWidget):
         self.sizes_thread = self.sizes_host.thread
         self.sizes_worker = self.sizes_host.worker
 
+        self.sizes_worker.databases_names.connect(
+            self.servers_tree.apply_databases
+        )
+
         self.sizes_worker.databases.connect(
             self.servers_tree.apply_sizes
         )

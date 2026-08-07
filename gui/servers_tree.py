@@ -146,7 +146,34 @@ class ServersTree(QTreeWidget):
             item.takeChildren()
             QTreeWidgetItem(item, [_PLACEHOLDER])
 
+    def apply_databases(self, server: str, names: list) -> None:
+        """Показывает список БД сразу (быстрый SHOW DATABASES),
+        без размеров — размеры доносит apply_sizes()."""
+        for index in range(self.topLevelItemCount()):
+            server_item = self.topLevelItem(index)
+            if self.server_name(server_item) != server:
+                continue
+
+            server_item.setText(0, server)
+            server_item.takeChildren()
+
+            if not names:
+                QTreeWidgetItem(server_item, [_NO_DB])
+                break
+
+            for db_name in names:
+                db_item = QTreeWidgetItem(server_item, [db_name])
+                db_item.setData(0, Qt.UserRole, db_name)
+                db_item.setIcon(0, icon("storage", 16, "#7c3aed"))
+                QTreeWidgetItem(db_item, [_PLACEHOLDER])
+            break
+
     def apply_sizes(self, server: str, sizes: dict) -> None:
+        """Дописывает размеры к уже показанным узлам БД.
+
+        Если список БД ещё не показан (apply_databases не успел) —
+        строит узлы из sizes напрямую.
+        """
         for index in range(self.topLevelItemCount()):
             server_item = self.topLevelItem(index)
             if self.server_name(server_item) != server:
@@ -157,20 +184,44 @@ class ServersTree(QTreeWidget):
                 0,
                 f"{server}  ({self.format_size(total)})",
             )
-            server_item.takeChildren()
 
-            if not sizes:
-                QTreeWidgetItem(server_item, [_NO_DB])
+            placeholder_only = (
+                server_item.childCount() == 0
+                or (
+                    server_item.childCount() == 1
+                    and server_item.child(0).text(0)
+                    in (_PLACEHOLDER, _LOADING, _NO_DB)
+                )
+            )
+
+            if placeholder_only:
+                server_item.takeChildren()
+
+                if not sizes:
+                    QTreeWidgetItem(server_item, [_NO_DB])
+                    break
+
+                for db_name, db_size in sizes.items():
+                    db_item = QTreeWidgetItem(
+                        server_item,
+                        [f"{db_name}  ({self.format_size(db_size)})"],
+                    )
+                    db_item.setData(0, Qt.UserRole, db_name)
+                    db_item.setIcon(0, icon("storage", 16, "#7c3aed"))
+                    QTreeWidgetItem(db_item, [_PLACEHOLDER])
                 break
 
-            for db_name, db_size in sizes.items():
-                db_item = QTreeWidgetItem(
-                    server_item,
-                    [f"{db_name}  ({self.format_size(db_size)})"],
+            for db_index in range(server_item.childCount()):
+                db_item = server_item.child(db_index)
+                db = self.db_name(db_item)
+
+                if not db or db not in sizes:
+                    continue
+
+                db_item.setText(
+                    0,
+                    f"{db}  ({self.format_size(sizes[db])})",
                 )
-                db_item.setData(0, Qt.UserRole, db_name)
-                db_item.setIcon(0, icon("storage", 16, "#7c3aed"))
-                QTreeWidgetItem(db_item, [_PLACEHOLDER])
             break
 
     def apply_tables(self, server: str, database: str, tables: list) -> None:

@@ -402,6 +402,24 @@ class MySQLClient:
         with self.connect(host) as conn:
             return self.list_databases_conn(conn)
 
+    def list_all_databases(self, host: str) -> list[str]:
+        """Все БД сервера (кроме системных из ignore_databases).
+
+        Быстрый SHOW DATABASES — используется для мгновенного показа
+        списка БД при раскрытии сервера (размеры подгружаются отдельно).
+        """
+        with self.connect(host) as conn:
+            rows = self.execute_on_connection(conn, "SHOW DATABASES")
+
+        ignore = set(config.advanced.ignore_databases)
+
+        return sorted(
+            db
+            for row in rows
+            for db in row.values()
+            if db not in ignore
+        )
+
     def search_databases(self, host: str, mask: str) -> list[str]:
         """Поиск БД по маске в стиле LIKE (например 'ar_%45').
 

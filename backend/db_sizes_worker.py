@@ -22,9 +22,10 @@ from common.mysql_client import mysql
 
 
 class DbSizesWorker(QObject):
-    databases = Signal(str, dict)      # server, {db: size_bytes}
-    tables = Signal(str, str, list)    # server, database, [(table, size_bytes)]
-    error = Signal(str, str, str)      # server, context, message
+    databases_names = Signal(str, list)  # server, [db_names]
+    databases = Signal(str, dict)        # server, {db: size_bytes}
+    tables = Signal(str, str, list)      # server, database, [(table, size_bytes)]
+    error = Signal(str, str, str)        # server, context, message
     finished = Signal()
 
     def __init__(self):
@@ -49,11 +50,24 @@ class DbSizesWorker(QObject):
         for server in servers:
             if self._stop:
                 break
+
+            # Сначала мгновенно показываем имена БД (быстрый SHOW DATABASES),
+            # затем размеры подгружаются тяжёлым запросом и обновляют текст.
             try:
-                sizes = mysql.database_sizes(server)
-                self.databases.emit(server, sizes)
+                names = mysql.list_all_databases(server)
             except Exception as ex:
                 self.error.emit(server, "databases", str(ex))
+                continue
+
+            self.databases_names.emit(server, names)
+
+            try:
+                sizes = mysql.database_sizes(server)
+            except Exception as ex:
+                self.error.emit(server, "databases", str(ex))
+                continue
+
+            self.databases.emit(server, sizes)
 
     @Slot(str, str)
     def request_tables(self, server: str, database: str):
