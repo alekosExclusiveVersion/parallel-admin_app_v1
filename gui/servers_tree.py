@@ -52,6 +52,12 @@ class ServersTree(QTreeWidget):
         self.setExpandsOnDoubleClick(False)
         self.setIndentation(18)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
+        # Автоматическая сортировка серверов, БД и таблиц по имени.
+        # Заглушки «…/Загрузка…/Нет БД/Нет таблиц» всегда единственные дети
+        # своих узлов, поэтому в отсортированный список не попадают.
+        self.setSortingEnabled(True)
+        # По умолчанию QHeaderView сортирует по убыванию — включаем по возрастанию.
+        self.header().setSortIndicator(0, Qt.AscendingOrder)
 
         header = self.header()
         header.setStretchLastSection(True)

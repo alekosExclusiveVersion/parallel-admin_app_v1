@@ -312,6 +312,78 @@ class TestServersTree(unittest.TestCase):
         self.assertEqual(srv.text(0), "Prod")
         self.assertEqual(tree.server_name(srv), "db1")
 
+    # ----------------------------------------------------------
+    # Сортировка серверов, БД и таблиц
+    # ----------------------------------------------------------
+
+    def test_sorting_is_enabled(self):
+        tree = ServersTree()
+        self.assertTrue(tree.isSortingEnabled())
+
+    def test_servers_are_sorted(self):
+        tree = ServersTree()
+        tree.set_servers([
+            ("Zeta", "z.example.com"),
+            ("Alpha", "a.example.com"),
+            ("Mid", "m.example.com"),
+        ])
+
+        texts = [
+            tree.topLevelItem(i).text(0)
+            for i in range(tree.topLevelItemCount())
+        ]
+
+        self.assertEqual(texts, sorted(texts))
+
+    def test_databases_are_sorted(self):
+        tree = ServersTree()
+        tree.set_servers(["srv1"])
+        tree.apply_databases("srv1", ["ar_b", "ar_a", "ar_c"])
+
+        srv = tree.topLevelItem(0)
+        dbs = [
+            tree.db_name(srv.child(i))
+            for i in range(srv.childCount())
+        ]
+
+        self.assertEqual(dbs, ["ar_a", "ar_b", "ar_c"])
+
+    def test_tables_are_sorted(self):
+        tree = ServersTree()
+        tree.set_servers(["srv1"])
+        tree.apply_databases("srv1", ["ar_a"])
+        srv = tree.topLevelItem(0)
+        db_item = srv.child(0)
+
+        tree.apply_tables("srv1", "ar_a", [
+            ("t2", 100),
+            ("t1", 200),
+            ("t3", 50),
+        ])
+
+        tables = [
+            db_item.child(i).text(0)
+            for i in range(db_item.childCount())
+        ]
+
+        self.assertEqual(tables, sorted(tables))
+
+    def test_placeholder_does_not_break_sorting_after_sizes(self):
+        tree = ServersTree()
+        tree.set_servers(["srv1"])
+        tree.apply_databases("srv1", ["ar_b", "ar_a"])
+        tree.apply_sizes("srv1", {"ar_a": 1000, "ar_b": 2000})
+
+        srv = tree.topLevelItem(0)
+        dbs = [
+            tree.db_name(srv.child(i))
+            for i in range(srv.childCount())
+        ]
+
+        self.assertEqual(dbs, ["ar_a", "ar_b"])
+        # размеры дописаны к отсортированным узлам
+        self.assertTrue(srv.child(0).text(0).startswith("ar_a  ("))
+
 
 if __name__ == "__main__":
     unittest.main()
