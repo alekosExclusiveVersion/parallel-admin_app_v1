@@ -80,7 +80,15 @@ class CollapsibleSplitter(QSplitter):
         else:
             restored = self._saved_sizes.get(index, 0)
             if restored <= 0:
-                restored = max(100, self.size() // max(2, self.count()))
+                available_size = (
+                    self.width()
+                    if self.orientation() == Qt.Horizontal
+                    else self.height()
+                )
+                restored = max(
+                    100,
+                    available_size // max(2, self.count()),
+                )
             sizes[index] = restored
             super().setSizes(sizes)
             self._remember_sizes()

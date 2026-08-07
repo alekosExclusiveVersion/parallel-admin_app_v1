@@ -1285,7 +1285,9 @@ class MainWindow(QWidget):
         self.toolbar_splitter.addWidget(body_splitter)
         self.toolbar_splitter.setStretchFactor(0, 0)
         self.toolbar_splitter.setStretchFactor(1, 1)
-        self.toolbar_splitter.setSizes([42, 900])
+        # Toolbar скрыт по умолчанию, но его ручка остаётся доступной
+        # для раскрытия двойным кликом.
+        self.toolbar_splitter.setSizes([0, 900])
 
         content.addWidget(self.toolbar_splitter, 1)
 
