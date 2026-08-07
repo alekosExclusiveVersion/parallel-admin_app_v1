@@ -50,6 +50,8 @@ class MainWindow(QWidget):
 
         self.repository = Repository()
 
+        self._last_sql_request = None   # (targets, sql) последнего запроса SQL Console
+
         self._build_ui()
         self._create_backend()
         self._create_query_backend()
@@ -145,6 +147,10 @@ class MainWindow(QWidget):
 
         self.query_worker.finished.connect(
             self._sql_finished
+        )
+
+        self.query_worker.export_done.connect(
+            self._export_done
         )
 
     def _create_search_backend(self):
@@ -593,6 +599,18 @@ class MainWindow(QWidget):
 
         filter_layout.addWidget(self.chk_only_errors)
 
+        self.btn_export_all = QToolButton()
+        self.btn_export_all.setObjectName("btn_icon")
+        self.btn_export_all.setIcon(icon("download"))
+        self.btn_export_all.setIconSize(QSize(16, 16))
+        self.btn_export_all.setToolTip(
+            "Save all results without row limit "
+            "(re-runs the last SQL query)"
+        )
+        self.btn_export_all.clicked.connect(self._export_all_results)
+
+        filter_layout.addWidget(self.btn_export_all)
+
         table_layout.addLayout(filter_layout)
 
         self.table = ResultTable()
@@ -1036,6 +1054,8 @@ class MainWindow(QWidget):
         self.table.reset_table()
         self.table.results_source = "sql"
 
+        self._last_sql_request = (targets, sql)
+
         self.lbl_sql_status.setText(
             f"Running on {len(targets)} target(s)..."
         )
@@ -1133,6 +1153,51 @@ class MainWindow(QWidget):
 
         self.table.clear_results()
         self.lbl_sql_status.setText("Ready")
+
+    def _export_all_results(self):
+
+        if self._last_sql_request is None:
+            self.lbl_sql_status.setText("Run a query first.")
+            return
+
+        if self.query_thread.isRunning():
+            self.lbl_sql_status.setText("A query is already running. Wait or press Stop.")
+            return
+
+        targets, sql = self._last_sql_request
+
+        if is_write_statement(sql):
+            self.lbl_sql_status.setText("Export is available only for read queries.")
+            return
+
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save all results",
+            "results_all.csv",
+            "CSV files (*.csv);;All files (*)",
+        )
+
+        if not filename:
+            return
+
+        self.lbl_sql_status.setText("Exporting all results...")
+        self.panel.set_busy(True)
+
+        self.query_worker.set_export_request(targets, sql, filename)
+
+        self.query_thread.start()
+
+    def _export_done(self, total_rows, filepath):
+
+        self.lbl_sql_status.setText(
+            f"Saved {total_rows} row(s) to {filepath}"
+        )
+        self.panel.set_busy(False)
+
+        self.append_log(
+            "SUCCESS",
+            f"Exported {total_rows} row(s) to {filepath}",
+        )
 
     def _sql_finished(self):
 

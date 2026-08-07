@@ -6,6 +6,9 @@ tests/test_query_worker.py
 из нескольких операторов и остановка между ними.
 """
 
+import csv
+import os
+import tempfile
 import time
 import threading
 import unittest
@@ -78,6 +81,26 @@ class FakeMySQL:
 
     def kill_connection(self, host, connection_id):
         self.killed.append((host, connection_id))
+
+
+class ScriptConn:
+    """Соединение, выдающее курсоры из очереди в порядке запросов."""
+
+    def __init__(self, cursors):
+        self._q = list(cursors)
+        self._id = 7
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def thread_id(self):
+        return self._id
+
+    def cursor(self):
+        return self._q.pop(0)
 
 
 class TestQueryWorkerKill(unittest.TestCase):
@@ -237,6 +260,123 @@ class TestQueryWorkerScript(unittest.TestCase):
         self.assertEqual(rows, [["1"]])
         self.assertIn("skipped", message)
         self.assertIn("row(s) affected", message)
+
+
+class TestQueryWorkerExport(unittest.TestCase):
+    def setUp(self):
+        self.fake = FakeMySQL()
+        patcher = patch.object(qw, "mysql", self.fake)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_run_export_writes_all_rows_to_csv(self):
+        cursors = [
+            FakeResultCursor(
+                ["id", "name"],
+                [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}],
+            ),
+        ]
+        self.fake.conn = ScriptConn(cursors)
+
+        fd, path = tempfile.mkstemp(suffix=".csv")
+        os.close(fd)
+
+        try:
+            worker = qw.QueryWorker()
+            worker.set_export_request(
+                [("host1", "db1")],
+                "SELECT id, name FROM t",
+                path,
+            )
+
+            events = []
+            worker.export_done.connect(lambda n, p: events.append((n, p)))
+
+            worker._run_export()
+
+            with open(path, newline="", encoding="utf-8-sig") as f:
+                rows = list(csv.reader(f))
+
+            self.assertEqual(
+                rows,
+                [
+                    ["Server", "Database", "id", "name"],
+                    ["host1", "db1", "1", "a"],
+                    ["host1", "db1", "2", "b"],
+                ],
+            )
+            self.assertEqual(events, [(2, path)])
+        finally:
+            os.unlink(path)
+
+    def test_run_export_multi_targets_writes_each_row(self):
+        self.fake.conn = ScriptConn([
+            FakeResultCursor(["id"], [{"id": 1}]),
+            FakeResultCursor(["id"], [{"id": 2}]),
+        ])
+
+        fd, path = tempfile.mkstemp(suffix=".csv")
+        os.close(fd)
+
+        try:
+            worker = qw.QueryWorker()
+            worker.set_export_request(
+                [("h1", "db1"), ("h2", "db2")],
+                "SELECT id FROM t",
+                path,
+            )
+
+            worker._run_export()
+
+            with open(path, newline="", encoding="utf-8-sig") as f:
+                rows = list(csv.reader(f))
+
+            self.assertEqual(
+                rows,
+                [
+                    ["Server", "Database", "id"],
+                    ["h1", "db1", "1"],
+                    ["h2", "db2", "2"],
+                ],
+            )
+        finally:
+            os.unlink(path)
+
+    def test_run_export_skips_affected_statements(self):
+        self.fake.conn = ScriptConn([
+            FakeResultCursor(["id"], [{"id": 1}]),
+            FakeCursor(),
+        ])
+
+        fd, path = tempfile.mkstemp(suffix=".csv")
+        os.close(fd)
+
+        try:
+            worker = qw.QueryWorker()
+            worker.set_export_request(
+                [("h1", "db1")],
+                "SELECT id FROM t; UPDATE t SET a=1",
+                path,
+            )
+
+            events = []
+            worker.export_done.connect(lambda n, p: events.append((n, p)))
+
+            worker._run_export()
+
+            with open(path, newline="", encoding="utf-8-sig") as f:
+                rows = list(csv.reader(f))
+
+            self.assertEqual(
+                rows,
+                [
+                    ["Server", "Database", "id"],
+                    ["h1", "db1", "1"],
+                ],
+            )
+            self.assertEqual(events, [(1, path)])
+        finally:
+            os.unlink(path)
 
 
 if __name__ == "__main__":

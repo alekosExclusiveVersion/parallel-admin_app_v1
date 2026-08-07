@@ -147,6 +147,18 @@ class ResultTable(QTableWidget):
         self.setSortingEnabled(False)
         self.results_source = None
 
+    def _fit_header_widths(self, fixed_widths: dict[int, int]) -> None:
+        """Растягивает колонки так, чтобы имена заголовков влезали целиком."""
+        header = self.horizontalHeader()
+        fm = self.fontMetrics()
+        for column in range(self.columnCount()):
+            item = self.horizontalHeaderItem(column)
+            if item is None:
+                continue
+            base = fixed_widths.get(column, 0)
+            text_width = fm.horizontalAdvance(item.text())
+            header.resizeSection(column, max(base, text_width + 26))
+
     def clear_results(self) -> None:
         """Очистка под формат Check (фиксированные 7 колонок)."""
         self.setSortingEnabled(False)
@@ -159,6 +171,8 @@ class ResultTable(QTableWidget):
 
         for index, width in CHECK_HEADER_WIDTHS.items():
             header.resizeSection(index, width)
+
+        self._fit_header_widths(CHECK_HEADER_WIDTHS)
 
         self.results_source = None
 
@@ -219,6 +233,8 @@ class ResultTable(QTableWidget):
         for index, width in fixed_widths.items():
             if index < len(labels):
                 header.resizeSection(index, width)
+
+        self._fit_header_widths(fixed_widths)
 
         self.sync_filter_columns()
 

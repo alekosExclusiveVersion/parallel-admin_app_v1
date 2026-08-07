@@ -14,6 +14,7 @@ backend/query_worker.py
 
 from __future__ import annotations
 
+import csv
 import time
 
 from PySide6.QtCore import QObject, Signal, Slot
@@ -37,6 +38,7 @@ class QueryWorker(QObject):
     result_target = Signal(str, str, list, list, str)
     error_target = Signal(str, str, str)
     stopped = Signal(int, int)
+    export_done = Signal(int, str)   # всего строк, путь к файлу
 
     def __init__(self):
         super().__init__()
@@ -47,6 +49,7 @@ class QueryWorker(QObject):
         self._mode = "query"
         self._targets = []
         self._statements = []
+        self._filepath = ""
         self._stop = False
         self._active_host = ""
         self._active_id = None
@@ -78,6 +81,22 @@ class QueryWorker(QObject):
         self._statements = split_statements(sql or "")
         self._row_limit = row_limit
         self._mode = "multi"
+        self._stop = False
+        self._active_host = ""
+        self._active_id = None
+
+    def set_export_request(self, targets, sql, filepath):
+        """Повторный запуск последнего запроса без лимита строк.
+
+        Результаты пишутся напрямую в CSV батчами (без накопления в памяти).
+        Разрешено только для чтения (SELECT): записывающие операторы
+        не перезапускаются.
+        """
+        self._targets = list(targets)
+        self._sql = sql
+        self._statements = split_statements(sql or "")
+        self._filepath = filepath
+        self._mode = "export"
         self._stop = False
         self._active_host = ""
         self._active_id = None
@@ -230,6 +249,10 @@ class QueryWorker(QObject):
             self._run_multi()
             return
 
+        if self._mode == "export":
+            self._run_export()
+            return
+
         if not self._statements:
             self.error.emit("No SQL statements to run.")
             self.finished.emit()
@@ -316,5 +339,124 @@ class QueryWorker(QObject):
 
         if self._stop:
             self.stopped.emit(done, len(self._targets))
+
+        self.finished.emit()
+
+    def _export_target(self, host_name, db_name, writer, state) -> None:
+        """Выполняет операторы на одном целевом сервере/БД, пишет строки
+        в CSV. Состояние (колонки, заголовок, счётчики) ведётся в `state`."""
+        with mysql.connect(host_name, db_name) as conn:
+            self._active_host = host_name
+            self._active_id = conn.thread_id()
+
+            try:
+                for statement in self._statements:
+                    if self._stop:
+                        break
+
+                    with conn.cursor() as cur:
+                        cur.execute(statement)
+
+                        if cur.description is None:
+                            continue
+
+                        stmt_columns = [d[0] for d in cur.description]
+
+                        if state["chosen"] is None:
+                            state["chosen"] = stmt_columns
+
+                        if stmt_columns != state["chosen"]:
+                            continue
+
+                        if not state["header_written"]:
+                            writer.writerow(
+                                ["Server", "Database"] + list(state["chosen"]),
+                            )
+                            state["header_written"] = True
+
+                        while not self._stop:
+                            batch = cur.fetchmany(5000)
+                            if not batch:
+                                break
+
+                            state["total"] += len(batch)
+
+                            for row in batch:
+                                writer.writerow(
+                                    [host_name, db_name]
+                                    + [
+                                        "Null" if value is None else str(value)
+                                        for value in row.values()
+                                    ],
+                                )
+            finally:
+                self._active_host = ""
+                self._active_id = None
+
+    def _run_export(self):
+        """Выполняет последний запрос на всех целях без лимита строк
+        и пишет результат в CSV."""
+        filepath = self._filepath
+
+        try:
+            f = open(filepath, "w", newline="", encoding="utf-8-sig")
+        except OSError as ex:
+            self.error.emit(f"Cannot open {filepath}: {ex}")
+            self.finished.emit()
+            return
+
+        writer = csv.writer(f)
+        state = {
+            "chosen": None,
+            "header_written": False,
+            "total": 0,
+        }
+        done = 0
+
+        self.query.emit(self._sql)
+
+        try:
+            for i, (host, database) in enumerate(self._targets, 1):
+                if self._stop:
+                    break
+
+                if database == ALL_DATABASES:
+                    try:
+                        names = mysql.list_databases(host)
+                    except Exception as ex:
+                        self.error_target.emit(host, "", str(ex))
+                        continue
+
+                    targets = [(host, name) for name in names]
+                else:
+                    targets = [(host, database)]
+
+                for host_name, db_name in targets:
+                    if self._stop:
+                        break
+
+                    self.started_target.emit(
+                        i,
+                        len(self._targets),
+                        host_name,
+                        db_name,
+                    )
+
+                    try:
+                        self._export_target(host_name, db_name, writer, state)
+                    except Exception as ex:
+                        if self._stop:
+                            break
+                        self.error_target.emit(host_name, db_name, str(ex))
+                        continue
+
+                    done += 1
+        finally:
+            f.close()
+
+        if self._stop:
+            self.stopped.emit(done, len(self._targets))
+        else:
+            self.export_done.emit(state["total"], filepath)
 
         self.finished.emit()
