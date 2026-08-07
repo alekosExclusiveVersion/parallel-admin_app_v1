@@ -32,6 +32,7 @@ from backend.db_sizes_worker import DbSizesWorker
 from common.sql_builder import sql_builder
 from common.sql_security import is_write_statement
 from common.version import APP_VERSION
+from common.mysql_client import mysql
 from gui.icons import icon
 from gui.styles import SHARED_STYLESHEET
 from gui.widgets.collapsible_splitter import CollapsibleSplitter
@@ -1437,6 +1438,8 @@ class MainWindow(QWidget):
                 if not thr.wait(5000):
                     thr.terminate()
                     thr.wait()
+
+        mysql.close_all()
 
     def closeEvent(self, event):
         self.shutdown()

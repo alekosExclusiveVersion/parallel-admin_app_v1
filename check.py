@@ -27,16 +27,16 @@ def process_server(server: str):
     logger.info(f"{server}: подключение")
 
     # Одно соединение на сервер: список БД, проверка наличия cfg_settings
-    # и пакетное чтение настроек выполняются без переподключений.
+    # (одним запросом на чанк) и пакетное чтение настроек выполняются
+    # без переподключений.
     with mysql.connect(server) as conn:
 
         databases = mysql.list_databases_conn(conn)
 
-        eligible = [
-            db
-            for db in databases
-            if mysql.has_cfg_settings_conn(conn, db)
-        ]
+        eligible = mysql.filter_databases_with_settings_conn(
+            conn,
+            databases,
+        )
 
         scanned = {
             item["database_name"]: item

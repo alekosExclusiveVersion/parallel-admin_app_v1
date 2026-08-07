@@ -29,6 +29,9 @@ class FakeMySQL:
     def list_databases_conn(self, conn):
         return ["ar_ru1", "ar_ru2"]
 
+    def filter_databases_with_settings_conn(self, conn, databases):
+        return list(databases)
+
     def scan_settings_batch(self, conn, databases):
         return [
             {"database_name": "ar_ru1", "country": "russia", "target_value": "gmail.com"},

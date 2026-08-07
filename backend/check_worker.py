@@ -60,7 +60,10 @@ class CheckWorker(QObject):
 
             with mysql.connect(server) as conn:
 
-                databases = mysql.list_databases_conn(conn)
+                databases = mysql.filter_databases_with_settings_conn(
+                    conn,
+                    mysql.list_databases_conn(conn),
+                )
 
             messages.append(
                 f"{server}: found {len(databases)} database(s)"

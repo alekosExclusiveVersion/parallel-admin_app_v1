@@ -18,6 +18,8 @@ class MySQLConfig:
     read_timeout: int
     write_timeout: int
     retry: int
+    pool_idle: int
+    max_connections: int
 
 
 @dataclass(frozen=True)
@@ -108,6 +110,12 @@ def load_config(config_file: str | Path | None = None) -> Config:
             read_timeout=p.getint("mysql", "read_timeout"),
             write_timeout=p.getint("mysql", "write_timeout"),
             retry=p.getint("mysql", "retry"),
+            pool_idle=p.getint("mysql", "pool_idle", fallback=4),
+            max_connections=p.getint(
+                "mysql",
+                "max_connections",
+                fallback=100,
+            ),
         ),
         parallel=ParallelConfig(
             workers=p.getint("parallel", "workers", fallback=8,),
