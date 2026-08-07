@@ -230,19 +230,29 @@ class QueryWorker(QObject):
 
     @Slot()
     def run(self):
+        """Точка входа потока.
 
+        finished эмитится ровно один раз, а никакое исключение не
+        покидает слот (в PySide6 вылетевшее из слота исключение может
+        аварийно завершить процесс).
+        """
         self.started.emit()
 
-        if self._mode == "databases":
-            try:
-                names = mysql.list_databases(self._host)
-            except Exception as ex:
+        try:
+            self._dispatch()
+        except Exception as ex:
+            if self._stop:
+                self.stopped.emit(0, 1)
+            else:
                 self.error.emit(str(ex))
-                self.finished.emit()
-                return
-
-            self.databases.emit(names)
+        finally:
             self.finished.emit()
+
+    def _dispatch(self):
+
+        if self._mode == "databases":
+            names = mysql.list_databases(self._host)
+            self.databases.emit(names)
             return
 
         if self._mode == "multi":
@@ -255,7 +265,6 @@ class QueryWorker(QObject):
 
         if not self._statements:
             self.error.emit("No SQL statements to run.")
-            self.finished.emit()
             return
 
         self.query.emit(self._sql)
@@ -269,15 +278,12 @@ class QueryWorker(QObject):
                 self.stopped.emit(0, 1)
             else:
                 self.error.emit(str(ex))
-            self.finished.emit()
             return
 
         if self._stop:
             self.stopped.emit(0, 1)
         else:
             self.result.emit(rows, columns, message)
-
-        self.finished.emit()
 
     def _run_multi(self):
 
@@ -340,8 +346,6 @@ class QueryWorker(QObject):
         if self._stop:
             self.stopped.emit(done, len(self._targets))
 
-        self.finished.emit()
-
     def _export_target(self, host_name, db_name, writer, state) -> None:
         """Выполняет операторы на одном целевом сервере/БД, пишет строки
         в CSV. Состояние (колонки, заголовок, счётчики) ведётся в `state`."""
@@ -402,7 +406,6 @@ class QueryWorker(QObject):
             f = open(filepath, "w", newline="", encoding="utf-8-sig")
         except OSError as ex:
             self.error.emit(f"Cannot open {filepath}: {ex}")
-            self.finished.emit()
             return
 
         writer = csv.writer(f)
@@ -458,5 +461,3 @@ class QueryWorker(QObject):
             self.stopped.emit(done, len(self._targets))
         else:
             self.export_done.emit(state["total"], filepath)
-
-        self.finished.emit()

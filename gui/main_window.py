@@ -1566,12 +1566,22 @@ class MainWindow(QWidget):
         self.query_worker.stop()
         self.search_worker.stop()
         self.sizes_worker.stop()
+        self.export_worker.stop()
+
+        # Прерываем активный экспорт на сервере (KILL), чтобы поток
+        # вышел быстро, а не ждал read_timeout.
+        if self.export_thread.isRunning():
+            threading.Thread(
+                target=self.export_worker.kill_active,
+                daemon=True,
+            ).start()
 
         for thr in (
             self.thread,
             self.query_thread,
             self.search_thread,
             self.sizes_thread,
+            self.export_thread,
         ):
             if thr.isRunning():
                 thr.quit()
