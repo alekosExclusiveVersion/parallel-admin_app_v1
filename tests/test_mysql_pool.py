@@ -7,6 +7,7 @@ tests/test_mysql_pool.py
 """
 
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
 
 from pymysql.err import OperationalError
@@ -133,6 +134,84 @@ class TestPoolReuse(unittest.TestCase):
 
         self.assertEqual(len(self.factory.closed), 3)
         self.assertEqual(self.client._pool_state(), {})
+
+
+class TestGlobalIdleLimit(unittest.TestCase):
+    def test_idle_count_tracks_acquire_release(self):
+        factory = ConnFactory()
+        client = MySQLClient()
+        client._open_connection = factory.open
+        client._discard_conn = lambda conn: conn.close()
+
+        for i in range(3):
+            with client.connect("h1", str(i)):
+                pass
+
+        self.assertEqual(client._idle_count, 3)
+
+        with client.connect("h1", "0"):
+            pass
+
+        self.assertEqual(client._idle_count, 3)
+
+        client.close_all()
+        self.assertEqual(client._idle_count, 0)
+
+    def test_global_idle_cap_evicts_across_threads(self):
+        factory = ConnFactory()
+        client = MySQLClient()
+        client._open_connection = factory.open
+        client._discard_conn = lambda conn: conn.close()
+
+        old_max = client.cfg.max_idle_connections
+        client.cfg = replace(client.cfg, max_idle_connections=3)
+
+        try:
+            for i in range(5):
+                with client.connect("h1", str(i)):
+                    pass
+
+            self.assertLessEqual(client._idle_count, 3)
+            self.assertLessEqual(len(factory.conns) - len(factory.closed), 3)
+        finally:
+            client.cfg = replace(client.cfg, max_idle_connections=old_max)
+
+    def test_idle_timeout_evicts_stale_connections(self):
+        factory = ConnFactory()
+        client = MySQLClient()
+        client._open_connection = factory.open
+        client._discard_conn = lambda conn: conn.close()
+
+        old_timeout = client.cfg.idle_timeout
+        old_max = client.cfg.max_idle_connections
+        client.cfg = replace(
+            client.cfg,
+            idle_timeout=1,
+            max_idle_connections=10,
+        )
+
+        try:
+            with client.connect("h1", "db1"):
+                pass
+
+            # Имитируем долгий простой кэшированного соединения.
+            import time as time_mod
+            entry = next(iter(client._pool_state().values()))
+            entry["last_used"] = time_mod.monotonic() - 5
+
+            # Релиз любого соединения триггерит eviction, которая
+            # закроет простаивающее слишком долго соединение.
+            with client.connect("h1", "db2"):
+                pass
+
+            self.assertTrue(factory.conns[0].closed)
+            self.assertEqual(len(factory.conns) - len(factory.closed), 1)
+        finally:
+            client.cfg = replace(
+                client.cfg,
+                idle_timeout=old_timeout,
+                max_idle_connections=old_max,
+            )
 
 
 class TestFilterDatabasesWithSettings(unittest.TestCase):

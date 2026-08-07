@@ -20,6 +20,8 @@ class MySQLConfig:
     retry: int
     pool_idle: int
     max_connections: int
+    max_idle_connections: int
+    idle_timeout: int
 
 
 @dataclass(frozen=True)
@@ -115,6 +117,16 @@ def load_config(config_file: str | Path | None = None) -> Config:
                 "mysql",
                 "max_connections",
                 fallback=100,
+            ),
+            max_idle_connections=p.getint(
+                "mysql",
+                "max_idle_connections",
+                fallback=16,
+            ),
+            idle_timeout=p.getint(
+                "mysql",
+                "idle_timeout",
+                fallback=60,
             ),
         ),
         parallel=ParallelConfig(

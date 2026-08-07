@@ -55,6 +55,7 @@ class MainWindow(QWidget):
         self._build_ui()
         self._create_backend()
         self._create_query_backend()
+        self._create_export_backend()
         self._create_search_backend()
         self._create_sizes_backend()
 
@@ -149,8 +150,30 @@ class MainWindow(QWidget):
             self._sql_finished
         )
 
-        self.query_worker.export_done.connect(
+    def _create_export_backend(self):
+
+        self.export_host = WorkerHost(QueryWorker, self)
+        self.export_thread = self.export_host.thread
+        self.export_worker = self.export_host.worker
+
+        self.export_worker.export_done.connect(
             self._export_done
+        )
+
+        self.export_worker.error.connect(
+            self._export_error
+        )
+
+        self.export_worker.error_target.connect(
+            self._export_target_error
+        )
+
+        self.export_worker.stopped.connect(
+            self._export_stopped
+        )
+
+        self.export_worker.finished.connect(
+            self._export_finished
         )
 
     def _create_search_backend(self):
@@ -1154,14 +1177,34 @@ class MainWindow(QWidget):
         self.table.clear_results()
         self.lbl_sql_status.setText("Ready")
 
+    def _set_export_ui(self, running: bool) -> None:
+
+        if running:
+            self.btn_export_all.setIcon(icon("stop"))
+            self.btn_export_all.setToolTip("Stop export")
+        else:
+            self.btn_export_all.setIcon(icon("download"))
+            self.btn_export_all.setToolTip(
+                "Save all results without row limit "
+                "(re-runs the last SQL query)"
+            )
+
     def _export_all_results(self):
+
+        # Клик во время экспорта = остановить экспорт.
+        if self.export_thread.isRunning():
+            self.export_worker.stop()
+
+            threading.Thread(
+                target=self.export_worker.kill_active,
+                daemon=True,
+            ).start()
+
+            self.lbl_sql_status.setText("Stopping export...")
+            return
 
         if self._last_sql_request is None:
             self.lbl_sql_status.setText("Run a query first.")
-            return
-
-        if self.query_thread.isRunning():
-            self.lbl_sql_status.setText("A query is already running. Wait or press Stop.")
             return
 
         targets, sql = self._last_sql_request
@@ -1181,23 +1224,50 @@ class MainWindow(QWidget):
             return
 
         self.lbl_sql_status.setText("Exporting all results...")
-        self.panel.set_busy(True)
+        self._set_export_ui(True)
 
-        self.query_worker.set_export_request(targets, sql, filename)
+        self.export_worker.set_export_request(targets, sql, filename)
 
-        self.query_thread.start()
+        self.export_thread.start()
 
     def _export_done(self, total_rows, filepath):
 
         self.lbl_sql_status.setText(
             f"Saved {total_rows} row(s) to {filepath}"
         )
-        self.panel.set_busy(False)
 
         self.append_log(
             "SUCCESS",
             f"Exported {total_rows} row(s) to {filepath}",
         )
+
+    def _export_finished(self):
+
+        self._set_export_ui(False)
+
+    def _export_error(self, message):
+
+        self.lbl_sql_status.setText(f"Export error: {message}")
+        self._set_export_ui(False)
+
+        self.append_log(
+            "ERROR",
+            f"Export: {message}",
+        )
+
+    def _export_target_error(self, host, database, message):
+
+        self.append_log(
+            "ERROR",
+            f"Export [{host}.{database}]: {message}",
+        )
+
+    def _export_stopped(self, done, total):
+
+        self.lbl_sql_status.setText(
+            f"Export stopped ({done} of {total})"
+        )
+        self._set_export_ui(False)
 
     def _sql_finished(self):
 

@@ -7,6 +7,15 @@ common/mysql_client.py
 соединение для пары (host, database) между последовательными запросами,
 а idle-кэш потока ограничен (pool_idle). Это резко снижает число
 одновременных коннектов при батчинге, поиске размеров и мульти-запросах.
+
+Чтобы сервер не держал лишние соединения:
+  - глобальный лимит простаивающих соединений (max_idle_connections) —
+    общий для всех потоков, кэш не может превысить его;
+  - idle_timeout — простаивающее соединение закрывается, если не
+    использовалось дольше этого времени;
+  - жёсткий потолок одновременных соединений (max_connections) через
+    BoundedSemaphore.
+
 Разорванные соединения пересоздаются, транзиентные ошибки (2006/2013/1927)
 повторяются один раз на свежем соединении.
 """
@@ -51,6 +60,8 @@ class MySQLClient:
         self._conn_semaphore = threading.BoundedSemaphore(
             max(1, self.cfg.max_connections)
         )
+        self._idle_lock = threading.Lock()
+        self._idle_count = 0
         atexit.register(self.close_all)
 
     def set_query_hook(self, hook) -> None:
@@ -137,15 +148,19 @@ class MySQLClient:
 
         if entry is None:
             conn = self._open_connection(host, database)
-            entry = {"conn": conn, "depth": 0}
+            entry = {"conn": conn, "depth": 0, "last_used": time.monotonic()}
             state[key] = entry
-        elif entry["depth"] == 0 and not self._is_alive(entry["conn"]):
-            # Соединение отвалилось в простое — пересоздаём.
-            self._discard_conn(entry["conn"])
-            conn = self._open_connection(host, database)
-            entry["conn"] = conn
+        elif entry["depth"] == 0:
+            if not self._is_alive(entry["conn"]):
+                # Соединение отвалилось в простое — пересоздаём.
+                self._close_idle(entry)
+                conn = self._open_connection(host, database)
+                entry["conn"] = conn
+            else:
+                self._idle_dec()  # idle -> busy
 
         entry["depth"] += 1
+        entry["last_used"] = time.monotonic()
         return entry["conn"]
 
     def _release(self, host: str, database: str | None = None) -> None:
@@ -160,32 +175,86 @@ class MySQLClient:
 
         if entry["depth"] <= 0:
             entry["depth"] = 0
+            self._idle_inc()  # busy -> idle
             self._evict_idle()
 
+    def _idle_inc(self) -> None:
+        with self._idle_lock:
+            self._idle_count += 1
+
+    def _idle_dec(self) -> None:
+        with self._idle_lock:
+            if self._idle_count > 0:
+                self._idle_count -= 1
+
+    def _close_idle(self, entry: dict) -> None:
+        """Закрывает простаивающее соединение и освобождает счётчик idle."""
+        self._idle_dec()
+        self._discard_conn(entry["conn"])
+
     def _evict_idle(self) -> None:
-        """Закрывает лишние простые соединения потока (LRU-приближение)."""
+        """Ограничивает кэш простаивающих соединений потока.
+
+        Закрывает лишние соединения, когда их больше, чем позволяет
+        per-thread лимит (pool_idle), они простояли дольше idle_timeout,
+        либо их общее число превышает глобальный лимит
+        (max_idle_connections). Старые закрываются первыми (LRU).
+        """
         state = self._pool_state()
-        limit = max(1, self.cfg.pool_idle)
+        now = time.monotonic()
+        pool_idle = max(1, self.cfg.pool_idle)
+        idle_timeout = self.cfg.idle_timeout
+        max_idle = max(1, self.cfg.max_idle_connections)
 
         idle = [
             (key, entry)
             for key, entry in state.items()
             if entry["depth"] == 0
         ]
+        idle.sort(key=lambda kv: kv[1]["last_used"])
 
-        if len(idle) <= limit:
-            return
+        # 1) Лимит idle-кэша одного потока.
+        if len(idle) > pool_idle:
+            for key, entry in idle[: len(idle) - pool_idle]:
+                self._close_idle(entry)
+                del state[key]
+            idle = idle[len(idle) - pool_idle:]
 
-        for key, entry in idle[: len(idle) - limit]:
-            self._discard_conn(entry["conn"])
-            del state[key]
+        # 2) Таймаут простоя: соединение не переживает долгий простой.
+        if idle_timeout > 0:
+            cutoff = now - idle_timeout
+            stale_keys = {
+                key
+                for key, entry in idle
+                if entry["last_used"] < cutoff
+            }
+            idle = [
+                (key, entry)
+                for key, entry in idle
+                if key not in stale_keys
+            ]
+            for key in stale_keys:
+                self._close_idle(state[key])
+                del state[key]
+
+        # 3) Глобальный лимит простаивающих соединений всех потоков.
+        with self._idle_lock:
+            excess = self._idle_count - max_idle
+
+        if excess > 0:
+            for key, entry in idle[:excess]:
+                self._close_idle(entry)
+                del state[key]
 
     def close_all(self) -> None:
         """Закрывает все соединения текущего потока. Для CLI и завершения."""
         state = self._pool_state()
 
         for key, entry in list(state.items()):
-            self._discard_conn(entry["conn"])
+            if entry["depth"] == 0:
+                self._close_idle(entry)
+            else:
+                self._discard_conn(entry["conn"])
             del state[key]
 
     @contextmanager
