@@ -7,9 +7,10 @@ common/mssql_client.py
 server_catalog / database_table_sizes / kill_connection / connection_id),
 чтобы воркеры могли работать с обоими движками через client_for().
 
-Соединения кэшируются по потокам: пара (host, database) переиспользует
-одно соединение между последовательными запросами, idle-кэш потока
-ограничен (pool_idle / idle_timeout).
+Соединения обслуживает глобальный пул common/conn_pool.py (аналогично
+MySQL): пары (host, database) переиспользуют одно соединение между
+запросами из любых потоков, idle-кэш ограничен
+(pool_idle / max_idle_connections / idle_timeout).
 """
 
 from __future__ import annotations
@@ -17,13 +18,13 @@ from __future__ import annotations
 import atexit
 import re
 import threading
-import time
 from contextlib import contextmanager
 from typing import Any
 
 import pymssql
 
 from common.config import config
+from common.conn_pool import ConnectionPool
 from common.logger import logger
 from common.server_registry import registry
 
@@ -34,21 +35,20 @@ _SYSTEM_DBS = frozenset(
 
 
 class MSSQLClient:
-    def __init__(self) -> None:
-        self.cfg = config.mssql
-        self._local = threading.local()
+    def __init__(self, cfg: Any = None) -> None:
+        self.cfg = cfg or config.mssql
+        self._pool = ConnectionPool(
+            cfg=lambda: self.cfg,
+            open_conn=lambda host, db: self._open_connection(host, db),
+            alive_check=None,
+            acquire_timeout=self.cfg.acquire_timeout,
+            name="mssql",
+        )
         atexit.register(self.close_all)
 
     # ----------------------------------------------------------
-    # Пул соединений (переиспользование в рамках одного потока)
+    # Пул соединений
     # ----------------------------------------------------------
-
-    def _pool_state(self) -> dict:
-        state = getattr(self._local, "pool", None)
-        if state is None:
-            state = {}
-            self._local.pool = state
-        return state
 
     def _open_connection(self, host: str, database: str | None = None):
         user, password, port = registry.credentials_for(host)
@@ -74,7 +74,9 @@ class MSSQLClient:
                     f"{host}: попытка {attempt}/{self.cfg.retry} подключения "
                     f"не удалась ({ex})"
                 )
-                time.sleep(1)
+                if attempt < self.cfg.retry:
+                    import time
+                    time.sleep(1)
 
         if conn is None:
             raise RuntimeError(
@@ -101,80 +103,21 @@ class MSSQLClient:
 
         return conn
 
-    def _acquire(self, host: str, database: str | None = None):
-        key = (host, database)
-        state = self._pool_state()
-        entry = state.get(key)
-
-        if entry is None:
-            conn = self._open_connection(host, database)
-            entry = {"conn": conn, "depth": 0, "last_used": time.monotonic()}
-            state[key] = entry
-
-        entry["depth"] += 1
-        entry["last_used"] = time.monotonic()
-        return entry["conn"]
-
-    def _release(self, host: str, database: str | None = None) -> None:
-        state = self._pool_state()
-        key = (host, database)
-        entry = state.get(key)
-
-        if entry is None:
-            return
-
-        entry["depth"] -= 1
-
-        if entry["depth"] <= 0:
-            entry["depth"] = 0
-            self._evict_idle()
-
-    def _evict_idle(self) -> None:
-        """Закрывает простаивающие соединения: сверх per-thread лимита
-        (pool_idle) или простоявшие дольше idle_timeout."""
-        state = self._pool_state()
-        now = time.monotonic()
-        pool_idle = max(1, self.cfg.pool_idle)
-        idle_timeout = self.cfg.idle_timeout
-
-        idle = [
-            (key, entry)
-            for key, entry in state.items()
-            if entry["depth"] == 0
-        ]
-        idle.sort(key=lambda kv: kv[1]["last_used"])
-
-        if len(idle) > pool_idle:
-            for key, entry in idle[: len(idle) - pool_idle]:
-                self._discard(state, key, entry)
-            idle = idle[len(idle) - pool_idle:]
-
-        if idle_timeout > 0:
-            cutoff = now - idle_timeout
-            for key, entry in idle:
-                if entry["last_used"] < cutoff:
-                    self._discard(state, key, entry)
-
-    def _discard(self, state: dict, key, entry: dict) -> None:
-        try:
-            entry["conn"].close()
-        except Exception:
-            pass
-        del state[key]
+    def _pool_state(self) -> dict:
+        """Снимок пула для тестов."""
+        return self._pool.debug_state()
 
     def close_all(self) -> None:
-        state = self._pool_state()
-        for key in list(state.keys()):
-            self._discard(state, key, state[key])
+        self._pool.close_all()
 
     @contextmanager
     def connect(self, host: str, database: str | None = None):
-        conn = self._acquire(host, database)
+        conn = self._pool.acquire(host, database)
 
         try:
             yield conn
         finally:
-            self._release(host, database)
+            self._pool.release(host, database, conn)
 
     def execute_on_connection(self, conn, sql: str, params=None):
         try:

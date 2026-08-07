@@ -23,6 +23,8 @@ class MySQLConfig:
     max_connections: int
     max_idle_connections: int
     idle_timeout: int
+    max_per_key: int
+    acquire_timeout: int
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,10 @@ class MSSQLConfig:
     retry: int
     pool_idle: int
     idle_timeout: int
+    max_idle_connections: int
+    max_connections: int
+    max_per_key: int
+    acquire_timeout: int
 
 
 @dataclass(frozen=True)
@@ -142,6 +148,16 @@ def load_config(config_file: str | Path | None = None) -> Config:
                 "idle_timeout",
                 fallback=60,
             ),
+            max_per_key=p.getint(
+                "mysql",
+                "max_per_key",
+                fallback=4,
+            ),
+            acquire_timeout=p.getint(
+                "mysql",
+                "acquire_timeout",
+                fallback=10,
+            ),
         ),
         mssql=MSSQLConfig(
             user=p.get("mssql", "user", fallback="sa"),
@@ -151,6 +167,26 @@ def load_config(config_file: str | Path | None = None) -> Config:
             retry=p.getint("mssql", "retry", fallback=3),
             pool_idle=p.getint("mssql", "pool_idle", fallback=4),
             idle_timeout=p.getint("mssql", "idle_timeout", fallback=60),
+            max_idle_connections=p.getint(
+                "mssql",
+                "max_idle_connections",
+                fallback=16,
+            ),
+            max_connections=p.getint(
+                "mssql",
+                "max_connections",
+                fallback=100,
+            ),
+            max_per_key=p.getint(
+                "mssql",
+                "max_per_key",
+                fallback=4,
+            ),
+            acquire_timeout=p.getint(
+                "mssql",
+                "acquire_timeout",
+                fallback=10,
+            ),
         ),
         parallel=ParallelConfig(
             workers=p.getint("parallel", "workers", fallback=8,),

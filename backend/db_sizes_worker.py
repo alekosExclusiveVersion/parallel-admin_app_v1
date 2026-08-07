@@ -6,18 +6,27 @@ backend/db_sizes_worker.py
 Worker живёт в постоянном QThread: run() мгновенно возвращается, поток
 остаётся в Qt event loop (exec), а запросы приходят слотами
 request_databases()/request_tables() через queued-соединение из GUI-потока.
-Qt event loop и есть очередь задач — быстрые последовательные раскрытия
-нескольких узлов обрабатываются по одному.
 
-ВНИМАНИЕ: здесь нельзя блокировать поток собственным while-циклом
+Каталог сервера (server_catalog — размеры БД и таблицы) загружается
+параллельно через ThreadPoolExecutor: каждый сервер обрабатывается в
+отдельном потоке, соединения выдаются общим пулом клиентов. Имена БД
+(list_all_databases) отдаются сразу — это быстрый запрос, и дерево
+начинает показывать узлы ещё до поступления размеров.
+
+ВНИМАНИЕ: слоты не должны блокировать поток собственным while-циклом
 (например, на Condition) — тогда до event loop не дойдёт очередь и
-queued-слоты никогда не вызовутся.
+queued-слоты никогда не вызовутся. Поэтому ожидание результатов пула
+внутри слота не выполняется: каталог загружается в фоновых потоках,
+а готовые данные приходят сигналами.
 """
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from PySide6.QtCore import QObject, Signal, Slot
 
+from common.config import config
 from common.server_registry import client_for
 
 
@@ -32,9 +41,14 @@ class DbSizesWorker(QObject):
     def __init__(self):
         super().__init__()
         self._stop = False
+        self._executor = ThreadPoolExecutor(
+            max_workers=max(1, config.parallel.database_workers),
+            thread_name_prefix="sizes",
+        )
 
     def stop(self):
         self._stop = True
+        self._executor.shutdown(wait=False, cancel_futures=True)
         self.finished.emit()
 
     @Slot()
@@ -50,28 +64,19 @@ class DbSizesWorker(QObject):
 
         for server in servers:
             if self._stop:
-                break
-
-            client = client_for(server)
+                return
 
             # 1) Имена БД — мгновенно (быстрый список).
             try:
-                names = client.list_all_databases(server)
+                names = client_for(server).list_all_databases(server)
             except Exception as ex:
                 self.error.emit(server, "databases", str(ex))
                 continue
 
             self.databases_names.emit(server, names)
 
-            # 2) Размеры + таблицы — одним запросом к каталогу.
-            try:
-                sizes, tables = client.server_catalog(server)
-            except Exception as ex:
-                self.error.emit(server, "databases", str(ex))
-                continue
-
-            self.databases.emit(server, sizes)
-            self.server_tables.emit(server, tables)
+            # 2) Размеры + таблицы — параллельно в пуле.
+            self._submit_catalog(server, "databases")
 
     @Slot(list)
     def refresh_sizes(self, servers: list[str]):
@@ -86,15 +91,34 @@ class DbSizesWorker(QObject):
 
         for server in servers:
             if self._stop:
-                break
-            try:
-                sizes, tables = client_for(server).server_catalog(server)
-            except Exception as ex:
-                self.error.emit(server, "refresh", str(ex))
-                continue
+                return
+            self._submit_catalog(server, "refresh")
 
-            self.databases.emit(server, sizes)
-            self.server_tables.emit(server, tables)
+    def _submit_catalog(self, server: str, context: str) -> None:
+        if self._stop:
+            return
+
+        try:
+            self._executor.submit(self._load_catalog, server, context)
+        except RuntimeError:
+            pass
+
+    def _load_catalog(self, server: str, context: str) -> None:
+        if self._stop:
+            return
+
+        try:
+            sizes, tables = client_for(server).server_catalog(server)
+        except Exception as ex:
+            if not self._stop:
+                self.error.emit(server, context, str(ex))
+            return
+
+        if self._stop:
+            return
+
+        self.databases.emit(server, sizes)
+        self.server_tables.emit(server, tables)
 
     @Slot(str, str)
     def request_tables(self, server: str, database: str):

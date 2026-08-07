@@ -15,10 +15,13 @@ backend/query_worker.py
 from __future__ import annotations
 
 import csv
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from common.config import config
 from common.server_registry import client_for
 from common.sql_splitter import split_statements
 
@@ -51,8 +54,8 @@ class QueryWorker(QObject):
         self._statements = []
         self._filepath = ""
         self._stop = False
-        self._active_host = ""
-        self._active_id = None
+        self._active_lock = threading.Lock()
+        self._active_conns: dict[int, tuple[str, int]] = {}
 
     def set_request(self, host, database, sql, row_limit=1000):
         self._host = host
@@ -62,8 +65,7 @@ class QueryWorker(QObject):
         self._row_limit = row_limit
         self._mode = "query"
         self._stop = False
-        self._active_host = ""
-        self._active_id = None
+        self._reset_active()
 
     def set_databases_request(self, host):
         self._host = host
@@ -72,8 +74,7 @@ class QueryWorker(QObject):
         self._statements = []
         self._mode = "databases"
         self._stop = False
-        self._active_host = ""
-        self._active_id = None
+        self._reset_active()
 
     def set_multi_request(self, targets, sql, row_limit=1000):
         self._targets = list(targets)
@@ -82,8 +83,7 @@ class QueryWorker(QObject):
         self._row_limit = row_limit
         self._mode = "multi"
         self._stop = False
-        self._active_host = ""
-        self._active_id = None
+        self._reset_active()
 
     def set_export_request(self, targets, sql, filepath):
         """Повторный запуск последнего запроса без лимита строк.
@@ -98,28 +98,41 @@ class QueryWorker(QObject):
         self._filepath = filepath
         self._mode = "export"
         self._stop = False
-        self._active_host = ""
-        self._active_id = None
+        self._reset_active()
 
     def stop(self):
         self._stop = True
 
-    def kill_active(self):
-        """Прерывает выполняющийся запрос через KILL <connection_id>.
+    def _reset_active(self):
+        with self._active_lock:
+            self._active_conns.clear()
 
-        Запускать в фоновом потоке: открывает отдельное соединение,
-        поэтому сам по себе может блокироваться.
-        """
-        host = self._active_host
-        conn_id = self._active_id
+    def active_connections(self):
+        """Список (host, connection_id) выполняющихся запросов."""
+        with self._active_lock:
+            return list(self._active_conns.values())
 
-        if not host or conn_id is None:
+    def _register_active(self, host: str, conn_id) -> None:
+        if conn_id is None:
             return
+        with self._active_lock:
+            self._active_conns[threading.get_ident()] = (host, conn_id)
 
-        try:
-            client_for(host).kill_connection(host, conn_id)
-        except Exception:
-            pass
+    def _unregister_active(self) -> None:
+        with self._active_lock:
+            self._active_conns.pop(threading.get_ident(), None)
+
+    def kill_active(self):
+        """Прерывает все выполняющиеся запросы через KILL <connection_id>.
+
+        Запускать в фоновом потоке: открывает отдельное соединение на
+        каждый активный хост, поэтому сам по себе может блокироваться.
+        """
+        for host, conn_id in self.active_connections():
+            try:
+                client_for(host).kill_connection(host, conn_id)
+            except Exception:
+                pass
 
     def _execute_statement(
         self,
@@ -163,8 +176,7 @@ class QueryWorker(QObject):
         client = client_for(host)
 
         with client.connect(host, database) as conn:
-            self._active_host = host
-            self._active_id = client.connection_id(conn)
+            self._register_active(host, client.connection_id(conn))
 
             try:
                 per_statement = []
@@ -176,8 +188,7 @@ class QueryWorker(QObject):
                         self._execute_statement(conn, statement, row_limit)
                     )
             finally:
-                self._active_host = ""
-                self._active_id = None
+                self._unregister_active()
 
         return self._combine_results(
             per_statement,
@@ -287,63 +298,95 @@ class QueryWorker(QObject):
         else:
             self.result.emit(rows, columns, message)
 
-    def _run_multi(self):
+    def _expand_multi_targets(self) -> list[tuple[int, str, str]]:
+        """Разворачивает цели в список (idx, host, db); `*` — все БД."""
+        expanded = []
 
-        done = 0
-
-        for i, (host, database) in enumerate(self._targets, 1):
-
-            if self._stop:
-                break
-
+        for idx, (host, database) in enumerate(self._targets, 1):
             if database == ALL_DATABASES:
                 try:
                     names = client_for(host).list_databases(host)
                 except Exception as ex:
                     self.error_target.emit(host, "", str(ex))
-                    done += 1
                     continue
 
-                targets = [(host, name) for name in names]
+                for name in names:
+                    expanded.append((idx, host, name))
             else:
-                targets = [(host, database)]
+                expanded.append((idx, host, database))
 
-            for host_name, db_name in targets:
+        return expanded
 
-                if self._stop:
-                    break
+    def _run_multi(self):
+        """Выполняет запрос на всех целях параллельно.
 
-                self.started_target.emit(
-                    i,
-                    len(self._targets),
-                    host_name,
-                    db_name,
+        Каждая цель обрабатывается в отдельном потоке пула: соединения
+        выдаются общим пулом клиентов (общий лимит соединений соблюдается),
+        результаты приходят по мере готовности через result_target.
+        """
+        expanded = self._expand_multi_targets()
+
+        if not expanded:
+            if self._stop:
+                self.stopped.emit(0, len(self._targets))
+            return
+
+        done = 0
+        done_lock = threading.Lock()
+        workers = max(1, min(len(expanded), config.parallel.workers))
+
+        def run_one(idx: int, host_name: str, db_name: str) -> None:
+            nonlocal done
+
+            if self._stop:
+                return
+
+            self.started_target.emit(
+                idx,
+                len(self._targets),
+                host_name,
+                db_name,
+            )
+
+            self.query.emit(self._sql)
+
+            try:
+                rows, columns, message = self._execute_sql(
+                    host_name, db_name, self._statements, self._row_limit,
                 )
-
-                self.query.emit(self._sql)
-
-                try:
-                    rows, columns, message = self._execute_sql(
-                        host_name, db_name, self._statements, self._row_limit,
-                    )
-                except Exception as ex:
-                    if self._stop:
-                        continue
+            except Exception as ex:
+                if not self._stop:
                     self.error_target.emit(host_name, db_name, str(ex))
-                    continue
+                return
 
-                if self._stop:
-                    break
+            if self._stop:
+                return
 
+            with done_lock:
                 done += 1
 
-                self.result_target.emit(
-                    host_name,
-                    db_name,
-                    rows,
-                    columns,
-                    message,
-                )
+            self.result_target.emit(
+                host_name,
+                db_name,
+                rows,
+                columns,
+                message,
+            )
+
+        executor = ThreadPoolExecutor(
+            max_workers=workers,
+            thread_name_prefix="query-multi",
+        )
+
+        try:
+            futures = [
+                executor.submit(run_one, idx, host_name, db_name)
+                for idx, host_name, db_name in expanded
+            ]
+            for future in futures:
+                future.result()
+        finally:
+            executor.shutdown(wait=True)
 
         if self._stop:
             self.stopped.emit(done, len(self._targets))
@@ -354,8 +397,7 @@ class QueryWorker(QObject):
         client = client_for(host_name)
 
         with client.connect(host_name, db_name) as conn:
-            self._active_host = host_name
-            self._active_id = client.connection_id(conn)
+            self._register_active(host_name, client.connection_id(conn))
 
             try:
                 for statement in self._statements:
@@ -398,8 +440,7 @@ class QueryWorker(QObject):
                                     ],
                                 )
             finally:
-                self._active_host = ""
-                self._active_id = None
+                self._unregister_active()
 
     def _run_export(self):
         """Выполняет последний запрос на всех целях без лимита строк

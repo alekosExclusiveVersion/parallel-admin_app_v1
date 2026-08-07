@@ -3,21 +3,19 @@ common/mysql_client.py
 
 Единая точка работы с MySQL.
 
-Соединения кэшируются по потокам: каждый поток переиспользует одно
-соединение для пары (host, database) между последовательными запросами,
-а idle-кэш потока ограничен (pool_idle). Это резко снижает число
-одновременных коннектов при батчинге, поиске размеров и мульти-запросах.
+Соединения обслуживает глобальный пул common/conn_pool.py: пары
+(host, database) переиспользуют одно соединение между последовательными
+запросами из любых потоков, а idle-кэш ограничен (pool_idle /
+max_idle_connections / idle_timeout). Это исключает размножение
+коннектов при параллельном батчинге, поиске размеров и мульти-запросах.
 
-Чтобы сервер не держал лишние соединения:
-  - глобальный лимит простаивающих соединений (max_idle_connections) —
-    общий для всех потоков, кэш не может превысить его;
-  - idle_timeout — простаивающее соединение закрывается, если не
-    использовалось дольше этого времени;
-  - жёсткий потолок одновременных соединений (max_connections) через
-    BoundedSemaphore.
+Ограничения (config.ini [mysql]):
+  - max_connections     — потолок одновременно занятых соединений;
+  - max_per_key         — максимум одновременных соединений к одной паре;
+  - acquire_timeout     — ожидание свободного соединения в пуле.
 
-Разорванные соединения пересоздаются, транзиентные ошибки (2006/2013/1927)
-повторяются один раз на свежем соединении.
+Разорванные соединения пересоздаются, транзиентные ошибки
+(2006/2013/1927/1053) повторяются один раз на свежем соединении.
 """
 
 from __future__ import annotations
@@ -25,7 +23,6 @@ from __future__ import annotations
 import atexit
 import re
 import threading
-import time
 from contextlib import contextmanager
 from typing import Any
 
@@ -34,6 +31,7 @@ from pymysql.cursors import DictCursor
 from pymysql.err import OperationalError
 
 from common.config import config
+from common.conn_pool import ConnectionPool
 from common.logger import logger
 from common.server_registry import registry
 from common.sql_builder import sql_builder
@@ -52,16 +50,17 @@ def _is_transient(ex: Exception) -> bool:
 
 
 class MySQLClient:
-    def __init__(self) -> None:
-        self.cfg = config.mysql
+    def __init__(self, cfg: Any = None) -> None:
+        self.cfg = cfg or config.mysql
         self._query_hook = None
         self._hook_lock = threading.Lock()
-        self._local = threading.local()
-        self._conn_semaphore = threading.BoundedSemaphore(
-            max(1, self.cfg.max_connections)
+        self._pool = ConnectionPool(
+            cfg=lambda: self.cfg,
+            open_conn=lambda host, db: self._open_connection(host, db),
+            alive_check=lambda conn: self._is_alive(conn),
+            acquire_timeout=self.cfg.acquire_timeout,
+            name="mysql",
         )
-        self._idle_lock = threading.Lock()
-        self._idle_count = 0
         atexit.register(self.close_all)
 
     def set_query_hook(self, hook) -> None:
@@ -73,52 +72,42 @@ class MySQLClient:
             return self._query_hook
 
     # ----------------------------------------------------------
-    # Пул соединений (переиспользование в рамках одного потока)
+    # Пул соединений
     # ----------------------------------------------------------
 
-    def _pool_state(self) -> dict:
-        state = getattr(self._local, "pool", None)
-        if state is None:
-            state = {}
-            self._local.pool = state
-        return state
-
     def _open_connection(self, host: str, database: str | None = None):
-        """Открывает соединение с ретраями. Слот пула занимается семафором."""
+        """Открывает соединение с ретраями (без пула — «сырой» коннект)."""
         conn = None
         last_error = None
 
-        self._conn_semaphore.acquire()
+        user, password, port = registry.credentials_for(host)
 
-        try:
-            user, password, port = registry.credentials_for(host)
+        for attempt in range(1, self.cfg.retry + 1):
+            try:
+                conn = pymysql.connect(
+                    host=host,
+                    port=port,
+                    user=user,
+                    password=password,
+                    database=database,
+                    connect_timeout=self.cfg.connect_timeout,
+                    read_timeout=self.cfg.read_timeout,
+                    write_timeout=self.cfg.write_timeout,
+                    cursorclass=DictCursor,
+                    autocommit=True,
+                    charset="utf8mb4",
+                )
+                break
 
-            for attempt in range(1, self.cfg.retry + 1):
-                try:
-                    conn = pymysql.connect(
-                        host=host,
-                        port=port,
-                        user=user,
-                        password=password,
-                        database=database,
-                        connect_timeout=self.cfg.connect_timeout,
-                        read_timeout=self.cfg.read_timeout,
-                        write_timeout=self.cfg.write_timeout,
-                        cursorclass=DictCursor,
-                        autocommit=True,
-                        charset="utf8mb4",
-                    )
-                    break
-
-                except Exception as ex:
-                    last_error = ex
-                    logger.warning(
-                        f"{host}: попытка {attempt}/{self.cfg.retry} подключения не удалась ({ex})"
-                    )
+            except Exception as ex:
+                last_error = ex
+                logger.warning(
+                    f"{host}: попытка {attempt}/{self.cfg.retry} подключения "
+                    f"не удалась ({ex})"
+                )
+                if attempt < self.cfg.retry:
+                    import time
                     time.sleep(1)
-        finally:
-            if conn is None:
-                self._conn_semaphore.release()
 
         if conn is None:
             raise RuntimeError(
@@ -134,8 +123,6 @@ class MySQLClient:
             conn.close()
         except Exception:
             pass
-        finally:
-            self._conn_semaphore.release()
 
     def _is_alive(self, conn) -> bool:
         try:
@@ -144,130 +131,33 @@ class MySQLClient:
         except Exception:
             return False
 
+    def _pool_state(self) -> dict:
+        """Снимок пула для тестов."""
+        return self._pool.debug_state()
+
+    @property
+    def _idle_count(self) -> int:
+        return self._pool.idle_count
+
     def _acquire(self, host: str, database: str | None = None):
-        key = (host, database)
-        state = self._pool_state()
-        entry = state.get(key)
+        return self._pool.acquire(host, database)
 
-        if entry is None:
-            conn = self._open_connection(host, database)
-            entry = {"conn": conn, "depth": 0, "last_used": time.monotonic()}
-            state[key] = entry
-        elif entry["depth"] == 0:
-            if not self._is_alive(entry["conn"]):
-                # Соединение отвалилось в простое — пересоздаём.
-                self._close_idle(entry)
-                conn = self._open_connection(host, database)
-                entry["conn"] = conn
-            else:
-                self._idle_dec()  # idle -> busy
-
-        entry["depth"] += 1
-        entry["last_used"] = time.monotonic()
-        return entry["conn"]
-
-    def _release(self, host: str, database: str | None = None) -> None:
-        state = self._pool_state()
-        key = (host, database)
-        entry = state.get(key)
-
-        if entry is None:
-            return
-
-        entry["depth"] -= 1
-
-        if entry["depth"] <= 0:
-            entry["depth"] = 0
-            self._idle_inc()  # busy -> idle
-            self._evict_idle()
-
-    def _idle_inc(self) -> None:
-        with self._idle_lock:
-            self._idle_count += 1
-
-    def _idle_dec(self) -> None:
-        with self._idle_lock:
-            if self._idle_count > 0:
-                self._idle_count -= 1
-
-    def _close_idle(self, entry: dict) -> None:
-        """Закрывает простаивающее соединение и освобождает счётчик idle."""
-        self._idle_dec()
-        self._discard_conn(entry["conn"])
-
-    def _evict_idle(self) -> None:
-        """Ограничивает кэш простаивающих соединений потока.
-
-        Закрывает лишние соединения, когда их больше, чем позволяет
-        per-thread лимит (pool_idle), они простояли дольше idle_timeout,
-        либо их общее число превышает глобальный лимит
-        (max_idle_connections). Старые закрываются первыми (LRU).
-        """
-        state = self._pool_state()
-        now = time.monotonic()
-        pool_idle = max(1, self.cfg.pool_idle)
-        idle_timeout = self.cfg.idle_timeout
-        max_idle = max(1, self.cfg.max_idle_connections)
-
-        idle = [
-            (key, entry)
-            for key, entry in state.items()
-            if entry["depth"] == 0
-        ]
-        idle.sort(key=lambda kv: kv[1]["last_used"])
-
-        # 1) Лимит idle-кэша одного потока.
-        if len(idle) > pool_idle:
-            for key, entry in idle[: len(idle) - pool_idle]:
-                self._close_idle(entry)
-                del state[key]
-            idle = idle[len(idle) - pool_idle:]
-
-        # 2) Таймаут простоя: соединение не переживает долгий простой.
-        if idle_timeout > 0:
-            cutoff = now - idle_timeout
-            stale_keys = {
-                key
-                for key, entry in idle
-                if entry["last_used"] < cutoff
-            }
-            idle = [
-                (key, entry)
-                for key, entry in idle
-                if key not in stale_keys
-            ]
-            for key in stale_keys:
-                self._close_idle(state[key])
-                del state[key]
-
-        # 3) Глобальный лимит простаивающих соединений всех потоков.
-        with self._idle_lock:
-            excess = self._idle_count - max_idle
-
-        if excess > 0:
-            for key, entry in idle[:excess]:
-                self._close_idle(entry)
-                del state[key]
+    def _release(self, host: str, database: str | None = None, conn=None) -> None:
+        if conn is not None:
+            self._pool.release(host, database, conn)
 
     def close_all(self) -> None:
-        """Закрывает все соединения текущего потока. Для CLI и завершения."""
-        state = self._pool_state()
-
-        for key, entry in list(state.items()):
-            if entry["depth"] == 0:
-                self._close_idle(entry)
-            else:
-                self._discard_conn(entry["conn"])
-            del state[key]
+        """Закрывает все соединения пула (для CLI и завершения)."""
+        self._pool.close_all()
 
     @contextmanager
     def connect(self, host: str, database: str | None = None):
-        conn = self._acquire(host, database)
+        conn = self._pool.acquire(host, database)
 
         try:
             yield conn
         finally:
-            self._release(host, database)
+            self._pool.release(host, database, conn)
 
     def execute_on_connection(
         self,
@@ -320,7 +210,7 @@ class MySQLClient:
                     return cur.fetchall()
             finally:
                 self._discard_conn(new_conn)
-        
+
     def list_databases_conn(
         self,
         conn,

@@ -88,7 +88,6 @@ class TestPoolReuse(unittest.TestCase):
         self.client = MySQLClient()
         self.client._open_connection = self.factory.open
         self.client._discard_conn = lambda conn: conn.close()
-
     def test_sequential_connect_reuses_connection(self):
         with self.client.connect("h1") as c1:
             with self.client.connect("h1") as c2:
@@ -123,7 +122,7 @@ class TestPoolReuse(unittest.TestCase):
         state = self.client._pool_state()
         idle = [e for e in state.values() if e["depth"] == 0]
 
-        self.assertLessEqual(len(idle), self.client.cfg.pool_idle)
+        self.assertLessEqual(len(idle), self.client.cfg.max_idle_connections)
 
     def test_close_all_closes_everything(self):
         for i in range(3):
@@ -134,6 +133,147 @@ class TestPoolReuse(unittest.TestCase):
 
         self.assertEqual(len(self.factory.closed), 3)
         self.assertEqual(self.client._pool_state(), {})
+
+
+class TestGlobalPool(unittest.TestCase):
+    """Семантика глобального (не thread-local) пула."""
+
+    def _client(self, **cfg_overrides):
+        factory = ConnFactory()
+        client = MySQLClient()
+        client._open_connection = factory.open
+        client._discard_conn = lambda conn: conn.close()
+        if cfg_overrides:
+            client.cfg = replace(client.cfg, **cfg_overrides)
+        return client, factory
+
+    def test_cross_thread_reuse_single_connection(self):
+        """Последовательные acquire из разных потоков делят один коннект."""
+        import threading
+
+        client, factory = self._client()
+
+        barrier = threading.Barrier(2)
+
+        def worker():
+            barrier.wait()
+            for _ in range(3):
+                with client.connect("h1"):
+                    pass
+            barrier.wait()
+
+        t = threading.Thread(target=worker)
+        t.start()
+        barrier.wait()
+        for _ in range(3):
+            with client.connect("h1"):
+                pass
+        barrier.wait()
+        t.join(timeout=5)
+
+        self.assertEqual(factory.opens, 1)
+
+    def test_max_per_key_blocks_and_times_out(self):
+        """Лимит одновременных соединений к паре (host, db) — PoolTimeout."""
+        import threading
+
+        client, factory = self._client(max_per_key=1, acquire_timeout=0.3)
+
+        held = threading.Event()
+        release = threading.Event()
+
+        def holder():
+            with client.connect("h1", "db1"):
+                held.set()
+                release.wait(5)
+
+        t = threading.Thread(target=holder)
+        t.start()
+        self.assertTrue(held.wait(5))
+
+        try:
+            from common.conn_pool import PoolTimeout
+
+            with self.assertRaises(PoolTimeout):
+                with client.connect("h1", "db1"):
+                    pass
+        finally:
+            release.set()
+            t.join(timeout=5)
+
+        self.assertEqual(factory.opens, 1)
+
+    def test_global_limit_blocks_and_times_out(self):
+        """Глобальный лимит max_connections — PoolTimeout."""
+        import threading
+
+        from common.config import config
+
+        factory = ConnFactory()
+        client = MySQLClient(
+            cfg=replace(config.mysql, max_connections=1, acquire_timeout=0.3)
+        )
+        client._open_connection = factory.open
+        client._discard_conn = lambda conn: conn.close()
+
+        held = threading.Event()
+        release = threading.Event()
+
+        def holder():
+            with client.connect("h1", "db1"):
+                held.set()
+                release.wait(5)
+
+        t = threading.Thread(target=holder)
+        t.start()
+        self.assertTrue(held.wait(5))
+
+        try:
+            from common.conn_pool import PoolTimeout
+
+            with self.assertRaises(PoolTimeout):
+                with client.connect("h1", "db2"):
+                    pass
+        finally:
+            release.set()
+            t.join(timeout=5)
+
+        self.assertEqual(factory.opens, 1)
+
+    def test_parallel_acquire_different_keys(self):
+        """Разные пары (host, db) открываются параллельно без таймаута."""
+        import threading
+
+        client, factory = self._client(max_per_key=1, acquire_timeout=5)
+        results = []
+        errors = []
+
+        def worker(n):
+            try:
+                with client.connect("h1", f"db{n}"):
+                    results.append(n)
+            except Exception as ex:
+                errors.append(ex)
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(sorted(results), [0, 1, 2, 3])
+        self.assertEqual(factory.opens, 4)
+
+    def test_nested_acquire_same_thread_same_key(self):
+        """Вложенный acquire того же потока/ключа не открывает новый."""
+        client, factory = self._client()
+
+        with client.connect("h1") as c1:
+            with client.connect("h1") as c2:
+                self.assertIs(c1, c2)
+
+        self.assertEqual(factory.opens, 1)
 
 
 class TestGlobalIdleLimit(unittest.TestCase):
@@ -177,6 +317,8 @@ class TestGlobalIdleLimit(unittest.TestCase):
             client.cfg = replace(client.cfg, max_idle_connections=old_max)
 
     def test_idle_timeout_evicts_stale_connections(self):
+        import time as time_mod
+
         factory = ConnFactory()
         client = MySQLClient()
         client._open_connection = factory.open
@@ -195,13 +337,12 @@ class TestGlobalIdleLimit(unittest.TestCase):
                 pass
 
             # Имитируем долгий простой кэшированного соединения.
-            import time as time_mod
-            entry = next(iter(client._pool_state().values()))
-            entry["last_used"] = time_mod.monotonic() - 5
+            kp = client._pool._entries[("h1", "db1")]
+            kp.conns[0].last_used = time_mod.monotonic() - 5
 
-            # Релиз любого соединения триггерит eviction, которая
-            # закроет простаивающее слишком долго соединение.
-            with client.connect("h1", "db2"):
+            # Повторный acquire того же ключа триггерит eviction,
+            # которая закроет простаивающее слишком долго соединение.
+            with client.connect("h1", "db1"):
                 pass
 
             self.assertTrue(factory.conns[0].closed)

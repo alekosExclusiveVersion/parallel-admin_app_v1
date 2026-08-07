@@ -1630,7 +1630,10 @@ class MainWindow(QWidget):
     def _run_table_select(self, server: str, database: str, table: str):
         """Выполняет SELECT * FROM `db`.`table` в фоновом потоке."""
         # Если поток занят (например, загрузкой списка БД) — останавливаем его,
-        # чтобы SELECT гарантированно выполнился.
+        # чтобы SELECT гарантированно выполнился. KILL всех активных запросов
+        # убирает зависший SELECT на сервере; ждём выхода потока штатно,
+        # без terminate(): принудительное убийство потока оставило бы
+        # соединение в пуле навсегда занятым.
         if self.query_thread.isRunning():
             self.query_worker.stop()
             threading.Thread(
@@ -1639,8 +1642,15 @@ class MainWindow(QWidget):
             ).start()
             self.query_thread.wait(5000)
             if self.query_thread.isRunning():
-                self.query_thread.terminate()
-                self.query_thread.wait()
+                self.lbl_sql_status.setText(
+                    "Не удалось остановить текущий запрос."
+                )
+                self.append_log(
+                    "ERROR",
+                    "Не удалось остановить текущий запрос; "
+                    "SELECT таблицы пропущен.",
+                )
+                return
 
         engine = registry.engine(server)
 

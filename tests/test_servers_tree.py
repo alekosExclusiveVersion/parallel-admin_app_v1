@@ -10,12 +10,14 @@ tests/test_servers_tree.py
 
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 import backend.db_sizes_worker as dw
@@ -72,22 +74,40 @@ class TestDbSizesWorker(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
 
+    def _make_worker(self):
+        worker = dw.DbSizesWorker()
+        self.addCleanup(worker.stop)
+        return worker
+
+    def _wait_until(self, events, count, timeout=3.0):
+        deadline = time.monotonic() + timeout
+        while len(events) < count and time.monotonic() < deadline:
+            time.sleep(0.01)
+        return len(events)
+
+    def _direct(self, signal, handler):
+        signal.connect(handler, Qt.ConnectionType.DirectConnection)
+
     def test_request_databases_emits_names_sizes_tables(self):
         self._patch_catalog()
-        worker = dw.DbSizesWorker()
+        worker = self._make_worker()
         events = []
 
-        worker.databases_names.connect(
-            lambda s, n: events.append(("names", s, n))
+        self._direct(
+            worker.databases_names,
+            lambda s, n: events.append(("names", s, n)),
         )
-        worker.databases.connect(
-            lambda s, d: events.append(("sizes", s, d))
+        self._direct(
+            worker.databases,
+            lambda s, d: events.append(("sizes", s, d)),
         )
-        worker.server_tables.connect(
-            lambda s, t: events.append(("tables", s, t))
+        self._direct(
+            worker.server_tables,
+            lambda s, t: events.append(("tables", s, t)),
         )
 
         worker.request_databases(["srv1"])
+        self._wait_until(events, 3)
 
         kinds = [e[0] for e in events]
         self.assertEqual(kinds[:3], ["names", "sizes", "tables"])
@@ -100,37 +120,46 @@ class TestDbSizesWorker(unittest.TestCase):
             raise RuntimeError("boom")
 
         self._patch_catalog(side_effect=boom)
-        worker = dw.DbSizesWorker()
+        worker = self._make_worker()
         events = []
 
-        worker.databases_names.connect(
-            lambda s, n: events.append(("names", s, n))
+        self._direct(
+            worker.databases_names,
+            lambda s, n: events.append(("names", s, n)),
         )
-        worker.error.connect(lambda *a: events.append(("error", a)))
+        self._direct(worker.error, lambda *a: events.append(("error", a)))
 
         worker.request_databases(["srv1"])
+        self._wait_until(events, 2)
 
         self.assertEqual(events[0][0], "names")
         self.assertTrue(any(e[0] == "error" for e in events))
 
     def test_refresh_sizes_emits_sizes_and_tables(self):
         self._patch_catalog()
-        worker = dw.DbSizesWorker()
+        worker = self._make_worker()
         events = []
 
-        worker.databases.connect(lambda s, d: events.append(("sizes", s)))
-        worker.server_tables.connect(lambda s, t: events.append(("tables", s)))
+        self._direct(
+            worker.databases,
+            lambda s, d: events.append(("sizes", s)),
+        )
+        self._direct(
+            worker.server_tables,
+            lambda s, t: events.append(("tables", s)),
+        )
 
         worker.refresh_sizes(["srv1"])
+        self._wait_until(events, 2)
 
         self.assertEqual([e[0] for e in events], ["sizes", "tables"])
 
     def test_request_tables_fallback(self):
         self._patch_catalog()
-        worker = dw.DbSizesWorker()
+        worker = self._make_worker()
         events = []
 
-        worker.tables.connect(lambda *a: events.append(("tables", a)))
+        self._direct(worker.tables, lambda *a: events.append(("tables", a)))
 
         worker.request_tables("srv1", "ar_b")
 
@@ -138,9 +167,12 @@ class TestDbSizesWorker(unittest.TestCase):
         self.assertEqual(events[0][1], ("srv1", "ar_b", [("t3", 2000)]))
 
     def test_stop_prevents_processing(self):
-        worker = dw.DbSizesWorker()
+        worker = self._make_worker()
         events = []
-        worker.databases_names.connect(lambda *a: events.append(("names", a)))
+        self._direct(
+            worker.databases_names,
+            lambda *a: events.append(("names", a)),
+        )
         worker.stop()
         worker.request_databases(["srv1"])
         self.assertEqual(events, [])
@@ -161,20 +193,24 @@ class TestDbSizesWorker(unittest.TestCase):
                 "server_catalog",
                 return_value=({"ar_a": 1000}, {}),
             ):
-                worker = dw.DbSizesWorker()
+                worker = self._make_worker()
                 events = []
 
-                worker.databases_names.connect(
-                    lambda s, n: events.append(("names", s, n))
+                self._direct(
+                    worker.databases_names,
+                    lambda s, n: events.append(("names", s, n)),
                 )
-                worker.databases.connect(
-                    lambda s, d: events.append(("sizes", s, d))
+                self._direct(
+                    worker.databases,
+                    lambda s, d: events.append(("sizes", s, d)),
                 )
-                worker.server_tables.connect(
-                    lambda s, t: events.append(("tables", s, t))
+                self._direct(
+                    worker.server_tables,
+                    lambda s, t: events.append(("tables", s, t)),
                 )
 
                 worker.request_databases(["mssql1"])
+                self._wait_until(events, 3)
 
         self.assertEqual(events[0], ("names", "mssql1", ["ar_a"]))
         self.assertEqual(events[1], ("sizes", "mssql1", {"ar_a": 1000}))

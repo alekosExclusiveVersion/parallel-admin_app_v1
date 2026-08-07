@@ -16,6 +16,8 @@ from unittest.mock import patch
 
 import backend.query_worker as qw
 
+from PySide6.QtCore import Qt
+
 
 class FakeCursor:
     description = None
@@ -131,8 +133,7 @@ class TestQueryWorkerKill(unittest.TestCase):
         thread.join(timeout=5)
 
         self.assertEqual(self.fake.killed, [("host1", 4242)])
-        self.assertIsNone(worker._active_id)
-        self.assertEqual(worker._active_host, "")
+        self.assertEqual(worker.active_connections(), [])
 
     def test_kill_active_without_active_query_is_noop(self):
         worker = qw.QueryWorker()
@@ -140,14 +141,94 @@ class TestQueryWorkerKill(unittest.TestCase):
         worker.kill_active()
         self.assertEqual(self.fake.killed, [])
 
-    def test_active_id_cleared_after_execution(self):
+    def test_active_connections_cleared_after_execution(self):
         worker = qw.QueryWorker()
         worker.set_request("host1", "db1", "UPDATE t SET a = 1", 1000)
 
         worker._execute_sql("host1", "db1", ["UPDATE t SET a = 1"], 1000)
 
-        self.assertIsNone(worker._active_id)
-        self.assertEqual(worker._active_host, "")
+        self.assertEqual(worker.active_connections(), [])
+
+
+class TestQueryWorkerMulti(unittest.TestCase):
+    def setUp(self):
+        self.fake = FakeMySQL()
+        patcher = patch.object(qw, "client_for", lambda host: self.fake)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_multi_runs_targets_in_parallel(self):
+        worker = qw.QueryWorker()
+        worker.set_multi_request(
+            [("h1", "db1"), ("h2", "db2")],
+            "SELECT sleep(1)",
+            1000,
+        )
+
+        started = []
+        results = []
+        worker.started_target.connect(
+            lambda i, n, h, d: started.append((h, d)),
+            Qt.ConnectionType.DirectConnection,
+        )
+        worker.result_target.connect(
+            lambda h, d, rows, columns, message: results.append((h, d)),
+            Qt.ConnectionType.DirectConnection,
+        )
+
+        t0 = time.monotonic()
+        worker._run_multi()
+        elapsed = time.monotonic() - t0
+
+        self.assertEqual(sorted(started), [("h1", "db1"), ("h2", "db2")])
+        self.assertEqual(sorted(results), [("h1", "db1"), ("h2", "db2")])
+        # Каждый оператор спит 0.3 c: параллельно — ~0.3, последовательно — 0.6.
+        self.assertLess(elapsed, 0.55)
+
+    def test_multi_expands_all_databases(self):
+        worker = qw.QueryWorker()
+        worker.set_multi_request(
+            [("h1", qw.ALL_DATABASES)],
+            "SELECT 1",
+            1000,
+        )
+
+        results = []
+        worker.result_target.connect(
+            lambda h, d, rows, columns, message: results.append((h, d)),
+            Qt.ConnectionType.DirectConnection,
+        )
+
+        worker._run_multi()
+
+        self.assertEqual(results, [("h1", "db1")])
+
+    def test_kill_active_kills_all_parallel_connections(self):
+        worker = qw.QueryWorker()
+        worker.set_multi_request(
+            [("h1", "db1"), ("h2", "db2")],
+            "SELECT sleep(10)",
+            1000,
+        )
+
+        thread = threading.Thread(target=worker._run_multi)
+        thread.start()
+
+        deadline = time.monotonic() + 5
+        while (
+            len(worker.active_connections()) < 2
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.01)
+
+        worker.kill_active()
+        thread.join(timeout=5)
+
+        self.assertEqual(
+            sorted(self.fake.killed),
+            [("h1", 4242), ("h2", 4242)],
+        )
+        self.assertEqual(worker.active_connections(), [])
 
 
 class TestQueryWorkerScript(unittest.TestCase):
