@@ -62,6 +62,7 @@ from gui.icons import icon
 from gui.sql_highlighter import SQLHighlighter
 from gui.styles import SHARED_STYLESHEET
 from gui.widgets.filter_header import FilterHeaderRow
+from gui.widgets.collapsible_splitter import CollapsibleSplitter
 
 
 class ComboItemDelegate(QStyledItemDelegate):
@@ -174,12 +175,6 @@ class MainWindow(QWidget):
         )
         self.action_refresh.triggered.connect(
             self._refresh_servers
-        )
-        self.action_toggle_servers.toggled.connect(
-            self._toggle_servers_panel
-        )
-        self.action_toggle_results.toggled.connect(
-            self._toggle_results_panel
         )
 
     def _create_query_backend(self):
@@ -533,33 +528,11 @@ class MainWindow(QWidget):
             "Stop",
             self,
         )
-        self.action_toggle_servers = QAction(
-            icon("swap_horiz", 20, "#0f172a"),
-            "Servers",
-            self,
-        )
-        self.action_toggle_servers.setCheckable(True)
-        self.action_toggle_servers.setChecked(True)
-
-        self.action_toggle_results = QAction(
-            icon("swap_horiz", 20, "#0f172a"),
-            "Results",
-            self,
-        )
-        self.action_toggle_results.setCheckable(True)
-        self.action_toggle_results.setChecked(True)
-
         self.action_refresh.setToolTip("Refresh servers")
         self.action_check.setToolTip("Run check")
         self.action_update.setToolTip("Update")
         self.action_verify.setToolTip("Verify")
         self.action_stop.setToolTip("Stop")
-        self.action_toggle_servers.setToolTip(
-            "Show/Hide server list"
-        )
-        self.action_toggle_results.setToolTip(
-            "Show/Hide results block"
-        )
 
         self.action_update.setEnabled(False)
         self.action_verify.setEnabled(False)
@@ -572,10 +545,6 @@ class MainWindow(QWidget):
         self.toolbar.addAction(self.action_verify)
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.action_stop)
-        self.toolbar.addSeparator()
-        self.toolbar.addAction(self.action_toggle_servers)
-        self.toolbar.addSeparator()
-        self.toolbar.addAction(self.action_toggle_results)
 
         content.addWidget(self.toolbar)
 
@@ -648,8 +617,11 @@ class MainWindow(QWidget):
 
         status_layout.addWidget(self.progress)
 
-        body_splitter = QSplitter(Qt.Horizontal)
+        body_splitter = CollapsibleSplitter(Qt.Horizontal)
         body_splitter.setHandleWidth(10)
+        body_splitter.sectionDoubleClicked.connect(
+            self._body_section_double_clicked
+        )
 
         self.server_frame = QFrame()
         self.server_frame.setMinimumWidth(200)
@@ -730,6 +702,7 @@ class MainWindow(QWidget):
         body_splitter.setStretchFactor(0, 0)
         body_splitter.setStretchFactor(1, 1)
         body_splitter.setSizes([280, 900])
+        self.body_splitter = body_splitter
 
         right = QVBoxLayout(right_container)
         right.setContentsMargins(0, 0, 0, 0)
@@ -957,6 +930,7 @@ class MainWindow(QWidget):
         # ----------------------------------------------------------
 
         sql_console_frame = QFrame()
+        self.sql_console_frame = sql_console_frame
 
         sql_console_layout = QVBoxLayout(sql_console_frame)
         sql_console_layout.setContentsMargins(8, 8, 8, 8)
@@ -1094,6 +1068,7 @@ class MainWindow(QWidget):
         # ----------------------------------------------------------
 
         search_frame = QFrame()
+        self.search_frame = search_frame
         search_frame.setObjectName("TabsBlock")
         search_frame.setFixedHeight(90)
 
@@ -1164,14 +1139,16 @@ class MainWindow(QWidget):
 
         self.tabs_frame_layout.addWidget(tabs)
 
-        self.right_splitter = QSplitter(Qt.Vertical)
-        self.right_splitter.setChildrenCollapsible(True)
+        self.right_splitter = CollapsibleSplitter(Qt.Vertical)
         self.right_splitter.setOpaqueResize(True)
-        self.right_splitter.setHandleWidth(4)
+        self.right_splitter.setHandleWidth(8)
         self.right_splitter.addWidget(search_frame)
         self.right_splitter.addWidget(sql_console_frame)
         self.right_splitter.addWidget(self.tabs_frame)
         self.right_splitter.setSizes([90, 240, 560])
+        self.right_splitter.sectionDoubleClicked.connect(
+            self._right_section_double_clicked
+        )
         right.addWidget(self.right_splitter)
 
         self.append_log(
@@ -1353,17 +1330,38 @@ class MainWindow(QWidget):
             f"Servers — Selected: {len(selected)}"
         )
 
+    def _body_section_double_clicked(self, section: int) -> None:
+        """Оставляет ручку Servers видимой после сворачивания секции."""
+        # Не вызываем setVisible(False): скрытие самого виджета также скрывает
+        # связанную с ним ручку QSplitter и лишает возможности раскрыть панель.
+        if section == 0:
+            self.body_splitter.update()
+
+    def _right_section_double_clicked(self, section: int) -> None:
+        """Оставляет ручки вертикального splitter доступными."""
+        # Панели остаются видимыми для Qt и скрываются только размером 0 px.
+        if 0 <= section < self.right_splitter.count():
+            self.right_splitter.update()
+
     def _toggle_servers_panel(self, visible):
-        self.server_frame.setVisible(visible)
-        if self.action_toggle_servers.isChecked() != visible:
-            self.action_toggle_servers.setChecked(visible)
+        """Программно показывает или сворачивает Servers без скрытия ручки."""
+        sizes = self.body_splitter.sizes()
+        if visible:
+            if sizes[0] == 0:
+                self.body_splitter.setSizes([280, max(1, sum(sizes) - 280)])
+        else:
+            sizes[0] = 0
+            self.body_splitter.setSizes(sizes)
 
     def _toggle_results_panel(self, visible):
-        self.tabs_frame.setVisible(visible)
-        if self.action_toggle_results.isChecked() != visible:
-            self.action_toggle_results.setChecked(visible)
+        """Показывает или сворачивает Results, сохраняя его ручку."""
+        sizes = self.right_splitter.sizes()
         if visible:
-            self.right_splitter.setSizes([90, 240, 560])
+            if sizes[2] == 0:
+                self.right_splitter.setSizes([90, 240, 560])
+        else:
+            sizes[2] = 0
+            self.right_splitter.setSizes(sizes)
 
     def _invert_selection(self):
         for index in range(self.server_list.topLevelItemCount()):
@@ -1541,8 +1539,8 @@ class MainWindow(QWidget):
         self._sql_busy(True)
 
         # Авто-показ блока Results
-        if not self.action_toggle_results.isChecked():
-            self.action_toggle_results.setChecked(True)
+        if not self.tabs_frame.isVisible():
+            self._toggle_results_panel(True)
 
         self.query_worker.set_multi_request(
             [(server, database)],
@@ -1666,8 +1664,8 @@ class MainWindow(QWidget):
 
         self._filter_timer.start()
         # Авто-показ блока Results при добавлении строки
-        if not self.action_toggle_results.isChecked():
-            self.action_toggle_results.setChecked(True)
+        if not self.tabs_frame.isVisible():
+            self._toggle_results_panel(True)
 
     def add_result(
         self,
@@ -2072,8 +2070,8 @@ class MainWindow(QWidget):
         self._filter_results()
         self._sql_busy(False)
         # Авто-показ блока Results по завершении запроса
-        if not self.action_toggle_results.isChecked():
-            self.action_toggle_results.setChecked(True)
+        if not self.tabs_frame.isVisible():
+            self._toggle_results_panel(True)
 
     def _sql_target_started(self, index, total, host, database):
 
