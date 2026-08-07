@@ -96,12 +96,19 @@ _ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 
 
 def app_icon() -> QIcon:
-    """Иконка приложения из файла assets/app_icon.svg.
+    """Иконка приложения для окна, Dock и переключателя macOS.
 
-    Используется для окна и панели задач. Если файл отсутствует —
-    возвращается встроенная SVG-иконка (fallback), чтобы приложение
-    не падало при запуске из другого каталога.
+    Приоритет у ParallelsSQLAdmin.icns — той же иконки, что лежит в бандле
+    и видна в Finder. На macOS QApplication.setWindowIcon() переопределяет
+    иконку в Dock и переключателе, поэтому она должна совпадать с
+    бандл-иконкой, иначе в Dock будет другой рисунок, чем в Finder.
     """
+    icns_path = _ASSETS_DIR / "ParallelsSQLAdmin.icns"
+    if icns_path.exists():
+        icon = QIcon(str(icns_path))
+        if not icon.isNull():
+            return icon
+
     svg_path = _ASSETS_DIR / "app_icon.svg"
     png_path = _ASSETS_DIR / "app_icon.png"
 
