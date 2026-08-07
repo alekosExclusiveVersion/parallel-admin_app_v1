@@ -1,4 +1,4 @@
-"""Smoke-тест новой фильтрации Results (сквозной + колоночные, OR).
+"""Smoke-тест новой фильтрации Results (сквозной + колоночные contains).
 
 Запуск: python3 debug/debug_filter_smoke.py
 Работает без отображения окна (QT_QPA_PLATFORM=offscreen).
@@ -75,19 +75,21 @@ def main():
     window._filter_results()
     assert count_visible(window) == 2, f"колонка Server srv1: {count_visible(window)}"
 
-    # 5) OR: Server=srv1 (строки 0,1) ИЛИ Status=ERROR (строка 1) — итого 2
+    # 5) OR внутри поколоночной группы: Server=srv1 ИЛИ Status=ERROR.
+    # Обе колонки дают строки 0,1, поэтому итог — 2 строки.
     window.filter_header._edits[5].setText("ERROR")
     window._filter_results()
     assert count_visible(window) == 2, f"OR srv1|ERROR: {count_visible(window)}"
 
-    # 6) Сквозной + колоночный вместе (OR-набор): srv2 ИЛИ Message=boom
-    window.filter_header.clear_filters()
-    window.result_search.setText("srv2")
-    window.filter_header._edits[6].setText("boom")
+    # 6) AND между группами: общий srv1 И поколоночный Status=ERROR.
+    # Сбрасываем Server, чтобы проверить именно связь двух групп.
+    window.filter_header._edits[1].clear()
+    window.result_search.setText("srv1")
     window._filter_results()
-    assert count_visible(window) == 3, f"OR srv2|boom: {count_visible(window)}"
+    assert count_visible(window) == 1, f"AND srv1&ERROR: {count_visible(window)}"
 
-    # 7) Только ошибки (AND к OR-набору): среди {srv1/boom} остаётся строка ERROR
+    # 7) Только ошибки применяется поверх результата AND как дополнительный
+    # фильтр. Строка уже имеет статус ERROR и остаётся видимой.
     window.chk_only_errors.setChecked(True)
     window._filter_results()
     assert count_visible(window) == 1, f"только ошибки: {count_visible(window)}"
@@ -100,7 +102,8 @@ def main():
         f"статус видимой строки: {cell_text(window, visible_rows[0], 5)}"
     )
 
-    # 8) Пустой сквозной + колоночный — только колоночный работает
+    # 8) Пустой общий фильтр отключает только свою группу: поколоночный
+    # фильтр продолжает работать самостоятельно.
     window.chk_only_errors.setChecked(False)
     window.result_search.clear()
     window.filter_header.clear_filters()

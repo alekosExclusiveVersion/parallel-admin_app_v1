@@ -2482,17 +2482,15 @@ class MainWindow(QWidget):
         self._filter_timer.start()
 
     def _filter_results(self):
-        """Применяет фильтры результатов (общий сквозной + колоночные, OR).
+        """Применяет фильтры Results.
 
-        - Общий сквозной фильтр result_search: строка видима, если текст
-          найден (contains, регистронезависимо) хотя бы в одной колонке.
-        - Колоночные фильтры FilterHeaderRow: каждый непустой фильтр
-          ищет (contains) в своей колонке.
-        - Все условия объединяются как OR — достаточно совпадения хотя бы
-          одного условия, чтобы строка осталась видимой.
-        - Если ни один фильтр не заполнен — показываются все строки.
-        - Чекбокс "Только ошибки" применяется дополнительно как AND:
-          после OR-фильтрации остаются только строки со статусом ERROR.
+        Общий поиск и поколоночный поиск связаны через AND: если заполнены
+        оба типа фильтров, строка должна пройти оба условия. Несколько
+        заполненных полей колонок объединяются через OR, поэтому достаточно
+        совпадения хотя бы в одной из указанных колонок.
+
+        Чекбокс "Только ошибки" применяется последним как дополнительный
+        AND-фильтр по колонке Status.
         """
         # Нормализуем ввод один раз: фильтрация является регистронезависимой,
         # поэтому и запрос, и значения таблицы сравниваются в lower-case.
@@ -2505,7 +2503,7 @@ class MainWindow(QWidget):
         status_index = self._column_index("Status")
 
         # Колоночные фильтры (по одной колонке, contains). Пустые поля
-        # исключаются из OR-набора внутри _matches_column_filters().
+        # исключаются из поколоночного OR-набора внутри _matches_columns().
         column_filters = self.filter_header.get_filters()
 
         table = self.table
@@ -2541,9 +2539,11 @@ class MainWindow(QWidget):
             return any(search in text for text in row_texts)
 
         def _matches_columns(row_texts):
-            """True, если хотя бы один непустой колоночный фильтр совпал."""
-            # Поля колонок являются независимыми альтернативами: фильтр
-            # по Server не обязан совпадать одновременно с фильтром Status.
+            """True, если совпал хотя бы один фильтр из колоночной группы."""
+            # Поля колонок являются независимыми альтернативами внутри
+            # своей группы: фильтр по Server не обязан совпадать одновременно
+            # с фильтром Status. Связь этой группы с общим поиском задаётся
+            # отдельно выше через AND.
             for column, col_filter in enumerate(column_filters):
                 if col_filter and column < len(row_texts):
                     if col_filter in row_texts[column]:
@@ -2556,17 +2556,19 @@ class MainWindow(QWidget):
 
                 row_texts = _row_texts(row)
 
-                # OR: общий сквозной ИЛИ колоночные фильтры. Если фильтры
-                # пусты, строка проходит базовую проверку без ограничений.
-                has_any_filter = bool(search) or any(column_filters)
+                has_global_filter = bool(search)
+                has_column_filters = any(column_filters)
 
-                if not has_any_filter:
-                    visible = True
-                else:
-                    visible = (
-                        _matches_global(row_texts)
+                # Общий фильтр и поколоночный блок — независимые группы,
+                # поэтому при заполнении обеих групп используется AND.
+                # Внутри поколоночного блока сохраняется OR между колонками.
+                visible = (
+                    (not has_global_filter or _matches_global(row_texts))
+                    and (
+                        not has_column_filters
                         or _matches_columns(row_texts)
                     )
+                )
 
                 # AND: только ошибки
                 if visible and only_errors and status_index is not None:
