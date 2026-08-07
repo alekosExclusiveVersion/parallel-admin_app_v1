@@ -110,15 +110,21 @@ class FilterHeaderRow(QWidget):
         header_viewport = header.viewport()
         header_origin = header_viewport.mapTo(table, header_viewport.rect().topLeft())
         row_origin = header_origin.y() + header_viewport.height()
+
+        # Строка занимает ровно область шапки (до вертикального скроллбара).
+        # Поля — её дети, Qt клипает их по границе строки, поэтому они не
+        # могут вылезти под скроллбар даже при минимальной ширине поля
+        # и при растянутой последней колонке.
+        viewport_right = header_origin.x() + header_viewport.width()
         self.setGeometry(
             0,
             row_origin,
-            table.width(),
+            viewport_right,
             self._row_height,
         )
 
-        visible_left = 0
-        visible_right = table.width()
+        visible_left = header_origin.x()
+        visible_right = viewport_right
         for logical_index, edit in enumerate(self._edits):
             if logical_index >= header.count():
                 edit.hide()
@@ -128,7 +134,7 @@ class FilterHeaderRow(QWidget):
             width = header.sectionSize(logical_index)
             edit.setGeometry(x, 0, width, self._row_height)
             edit.setVisible(
-                width > 0 and x + width > visible_left and x < visible_right
+                width > 0 and x < visible_right and x + width > visible_left
             )
 
         self.raise_()
