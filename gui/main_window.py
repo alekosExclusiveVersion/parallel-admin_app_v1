@@ -1028,7 +1028,7 @@ class MainWindow(QWidget):
             if answer != QMessageBox.Yes:
                 return
 
-        self.table.reset()
+        self.table.reset_table()
         self.table.results_source = "sql"
 
         self.lbl_sql_status.setText(
@@ -1262,7 +1262,7 @@ class MainWindow(QWidget):
 
         # Поиск показывает результат в таблице Results с колонками
         # Server и Database.
-        self.table.reset()
+        self.table.reset_table()
         self.table.results_source = "search"
 
         self.progress.setValue(0)
@@ -1367,7 +1367,7 @@ class MainWindow(QWidget):
 
         sql = f"SELECT * FROM `{database}`.`{table}` LIMIT 1000"
 
-        self.table.reset()
+        self.table.reset_table()
         self.table.results_source = "sql"
 
         self.lbl_sql_status.setText(

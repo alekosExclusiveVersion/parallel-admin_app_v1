@@ -139,7 +139,7 @@ class ResultTable(QTableWidget):
     # Наполнение
     # ----------------------------------------------------------
 
-    def reset(self) -> None:
+    def reset_table(self) -> None:
         """Полная очистка перед новым результатом (колонки пересоздаются)."""
         self.clear()
         self.setColumnCount(0)
