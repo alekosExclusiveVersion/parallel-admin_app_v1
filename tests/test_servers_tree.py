@@ -9,7 +9,9 @@ tests/test_servers_tree.py
 """
 
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -17,6 +19,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
 
 import backend.db_sizes_worker as dw
+from common.mysql_client import mysql
+from common.server_registry import registry
 from gui.servers_tree import ServersTree
 
 
@@ -43,18 +47,24 @@ class FakeSizesMySQL:
 
 class TestDbSizesWorker(unittest.TestCase):
     def setUp(self):
+        # Реестр серверов не должен трогать реальные файлы в тестах.
+        self._tmp = Path(tempfile.mkdtemp())
+        registry.servers_file = self._tmp / "servers.json"
+        registry.key_file = self._tmp / "servers.key"
+        registry._loaded = False
+
         self.fake = FakeSizesMySQL()
-        self.patcher = patch.object(dw.mysql, "list_all_databases",
+        self.patcher = patch.object(mysql, "list_all_databases",
                                     self.fake.list_all_databases)
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
 
     def _patch_catalog(self, side_effect=None, table_effect=None):
         patchers = [
-            patch.object(dw.mysql, "server_catalog",
+            patch.object(mysql, "server_catalog",
                          side_effect if side_effect
                          else self.fake.server_catalog),
-            patch.object(dw.mysql, "database_table_sizes",
+            patch.object(mysql, "database_table_sizes",
                          table_effect if table_effect
                          else self.fake.database_table_sizes),
         ]
@@ -134,6 +144,41 @@ class TestDbSizesWorker(unittest.TestCase):
         worker.stop()
         worker.request_databases(["srv1"])
         self.assertEqual(events, [])
+
+    def test_mssql_server_uses_mssql_client(self):
+        from common.mssql_client import mssql
+        from common.server_registry import ServerSpec
+
+        spec = ServerSpec(host="mssql1", engine="mssql")
+
+        with patch.object(registry, "find", return_value=spec):
+            with patch.object(
+                mssql,
+                "list_all_databases",
+                return_value=["ar_a"],
+            ), patch.object(
+                mssql,
+                "server_catalog",
+                return_value=({"ar_a": 1000}, {}),
+            ):
+                worker = dw.DbSizesWorker()
+                events = []
+
+                worker.databases_names.connect(
+                    lambda s, n: events.append(("names", s, n))
+                )
+                worker.databases.connect(
+                    lambda s, d: events.append(("sizes", s, d))
+                )
+                worker.server_tables.connect(
+                    lambda s, t: events.append(("tables", s, t))
+                )
+
+                worker.request_databases(["mssql1"])
+
+        self.assertEqual(events[0], ("names", "mssql1", ["ar_a"]))
+        self.assertEqual(events[1], ("sizes", "mssql1", {"ar_a": 1000}))
+        self.assertEqual(events[2], ("tables", "mssql1", {}))
 
 
 class TestServersTree(unittest.TestCase):

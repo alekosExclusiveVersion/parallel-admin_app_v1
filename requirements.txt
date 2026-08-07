@@ -11,3 +11,4 @@ PySide6_Essentials==6.11.1
 python-dotenv==1.2.2
 rich==15.0.0
 shiboken6==6.11.1
+pymssql==2.3.13

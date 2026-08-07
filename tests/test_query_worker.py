@@ -79,6 +79,12 @@ class FakeMySQL:
     def connect(self, host, database=None):
         return self.conn
 
+    def connection_id(self, conn):
+        return conn.thread_id()
+
+    def list_databases(self, host):
+        return ["db1"]
+
     def kill_connection(self, host, connection_id):
         self.killed.append((host, connection_id))
 
@@ -106,7 +112,7 @@ class ScriptConn:
 class TestQueryWorkerKill(unittest.TestCase):
     def setUp(self):
         self.fake = FakeMySQL()
-        patcher = patch.object(qw, "mysql", self.fake)
+        patcher = patch.object(qw, "client_for", lambda host: self.fake)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -147,7 +153,7 @@ class TestQueryWorkerKill(unittest.TestCase):
 class TestQueryWorkerScript(unittest.TestCase):
     def setUp(self):
         self.fake = FakeMySQL()
-        patcher = patch.object(qw, "mysql", self.fake)
+        patcher = patch.object(qw, "client_for", lambda host: self.fake)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -265,7 +271,7 @@ class TestQueryWorkerScript(unittest.TestCase):
 class TestQueryWorkerExport(unittest.TestCase):
     def setUp(self):
         self.fake = FakeMySQL()
-        patcher = patch.object(qw, "mysql", self.fake)
+        patcher = patch.object(qw, "client_for", lambda host: self.fake)
         patcher.start()
         self.addCleanup(patcher.stop)
 

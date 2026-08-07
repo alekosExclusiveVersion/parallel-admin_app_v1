@@ -34,6 +34,12 @@ from common.sql_security import is_write_statement
 from common.sql_splitter import split_statements
 from common.version import APP_VERSION
 from common.mysql_client import mysql
+from common.server_registry import (
+    ENGINE_MYSQL,
+    ServerSpec,
+    build_select_sql,
+    registry,
+)
 from gui.icons import icon
 from gui.styles import SHARED_STYLESHEET
 from gui.widgets.collapsible_splitter import CollapsibleSplitter
@@ -42,6 +48,7 @@ from gui.servers_tree import ServersTree
 from gui.result_table import ResultTable
 from gui.sql_console import SqlConsolePanel
 from gui.queries_panel import QueriesPanel
+from gui.server_dialog import ServerDialog
 
 
 class MainWindow(QWidget):
@@ -265,14 +272,16 @@ class MainWindow(QWidget):
 
         servers = self.repository.load_servers()
 
-        self.servers_tree.set_servers(servers)
+        hosts = [spec.host for spec in servers]
 
-        self.panel.set_servers(servers)
+        self.servers_tree.set_servers(hosts)
+
+        self.panel.set_servers(hosts)
 
         if self.panel.current_host().strip():
             self._sql_refresh_databases()
 
-        count = len(servers)
+        count = len(hosts)
 
         self.lbl_servers_value.setText(
             f"{count} / {count}"
@@ -286,6 +295,66 @@ class MainWindow(QWidget):
             "INFO",
             f"Loaded {count} server(s)."
         )
+
+    # ----------------------------------------------------------
+    # Server management
+    # ----------------------------------------------------------
+
+    def _add_server(self):
+        self._open_server_dialog(None)
+
+    def _edit_server(self, host: str):
+        if not host:
+            return
+        spec = registry.find(host)
+        if spec is None:
+            return
+        self._open_server_dialog(spec)
+
+    def _remove_server(self, host: str):
+        if not host:
+            return
+
+        answer = QMessageBox.question(
+            self,
+            "Remove server",
+            f"Remove server '{host}'?",
+        )
+
+        if answer != QMessageBox.Yes:
+            return
+
+        if self.repository.remove_server(host):
+            self.append_log(
+                "SUCCESS",
+                f"Server removed: {host}",
+            )
+            self._load_servers()
+
+    def _open_server_dialog(self, spec: ServerSpec | None):
+        dialog = ServerDialog(spec, self)
+
+        if dialog.exec() != ServerDialog.Accepted:
+            return
+
+        new_spec = dialog.spec()
+
+        if spec is None:
+            self.repository.add_server(new_spec)
+            self.append_log(
+                "SUCCESS",
+                f"Server added: {new_spec.display_name()} "
+                f"({new_spec.engine})",
+            )
+        else:
+            self.repository.update_server(spec.host, new_spec)
+            self.append_log(
+                "SUCCESS",
+                f"Server updated: {spec.host} → {new_spec.display_name()} "
+                f"({new_spec.engine})",
+            )
+
+        self._load_servers()
 
     # ----------------------------------------------------------
     # Refresh
@@ -326,7 +395,20 @@ class MainWindow(QWidget):
 
         servers = self.servers_tree.selected_servers()
 
-        self.worker.set_servers(servers)
+        # Check работает только с MySQL (MSSQL — браузинг и SQL-консоль).
+        mysql_servers = [
+            s for s in servers
+            if registry.engine(s) == ENGINE_MYSQL
+        ]
+        skipped = len(servers) - len(mysql_servers)
+
+        if skipped:
+            self.append_log(
+                "INFO",
+                f"Skipped {skipped} MSSQL server(s) — check is MySQL-only.",
+            )
+
+        self.worker.set_servers(mysql_servers)
 
         self.thread.start()
 
@@ -560,6 +642,13 @@ class MainWindow(QWidget):
 
         buttons = QHBoxLayout()
 
+        self.btn_add_server = QToolButton()
+        self.btn_add_server.setObjectName("btn_icon")
+        self.btn_add_server.setIcon(icon("add", 16, "#2563eb"))
+        self.btn_add_server.setIconSize(QSize(16, 16))
+        self.btn_add_server.setToolTip("Add server")
+        self.btn_add_server.clicked.connect(self._add_server)
+
         self.btn_select_all = QToolButton()
         self.btn_select_all.setObjectName("btn_icon")
         self.btn_select_all.setIcon(icon("done_all"))
@@ -578,6 +667,7 @@ class MainWindow(QWidget):
         self.btn_invert.setIconSize(QSize(16, 16))
         self.btn_invert.setToolTip("Invert selection")
 
+        buttons.addWidget(self.btn_add_server)
         buttons.addWidget(self.btn_select_all)
         buttons.addWidget(self.btn_clear)
         buttons.addWidget(self.btn_invert)
@@ -840,6 +930,18 @@ class MainWindow(QWidget):
 
         self.servers_tree.tableSelectRequested.connect(
             self._run_table_select
+        )
+
+        self.servers_tree.addServerRequested.connect(
+            self._add_server
+        )
+
+        self.servers_tree.editServerRequested.connect(
+            self._edit_server
+        )
+
+        self.servers_tree.removeServerRequested.connect(
+            self._remove_server
         )
 
         self.btn_log_clear.clicked.connect(
@@ -1408,6 +1510,15 @@ class MainWindow(QWidget):
             self.lbl_sql_status.setText("No servers to search.")
             return
 
+        servers = [spec.host for spec in servers]
+
+        # Поиск БД работает только с MySQL.
+        servers = [s for s in servers if registry.engine(s) == ENGINE_MYSQL]
+
+        if not servers:
+            self.lbl_sql_status.setText("No MySQL servers to search.")
+            return
+
         # Поиск показывает результат в таблице Results с колонками
         # Server и Database.
         self.table.reset_table()
@@ -1525,7 +1636,9 @@ class MainWindow(QWidget):
                 self.query_thread.terminate()
                 self.query_thread.wait()
 
-        sql = f"SELECT * FROM `{database}`.`{table}` LIMIT 1000"
+        engine = registry.engine(server)
+
+        sql = build_select_sql(engine, database, table, 1000)
 
         self.table.reset_table()
         self.table.results_source = "sql"
@@ -1546,7 +1659,7 @@ class MainWindow(QWidget):
 
         self.append_log(
             "INFO",
-            f"SELECT * FROM `{database}`.`{table}` @ {server}",
+            f"{sql} @ {server}",
         )
 
     def _save_log(self):

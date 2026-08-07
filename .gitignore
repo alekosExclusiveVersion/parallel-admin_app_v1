@@ -34,3 +34,7 @@ logs/
 .DS_Store
 # Спецификация Parallels SQL Admin
 Parallels SQL Admin.spec
+
+# Реквизиты серверов (генерируются при первом запуске)
+servers.json
+servers.key

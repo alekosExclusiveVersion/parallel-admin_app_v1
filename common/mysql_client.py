@@ -35,7 +35,7 @@ from pymysql.err import OperationalError
 
 from common.config import config
 from common.logger import logger
-from common.mysql_session import session
+from common.server_registry import registry
 from common.sql_builder import sql_builder
 
 # Коды ошибок, означающих разрыв/невалидность соединения —
@@ -91,12 +91,15 @@ class MySQLClient:
         self._conn_semaphore.acquire()
 
         try:
+            user, password, port = registry.credentials_for(host)
+
             for attempt in range(1, self.cfg.retry + 1):
                 try:
                     conn = pymysql.connect(
                         host=host,
-                        user=session.user or self.cfg.user,
-                        password=session.password or self.cfg.password,
+                        port=port,
+                        user=user,
+                        password=password,
                         database=database,
                         connect_timeout=self.cfg.connect_timeout,
                         read_timeout=self.cfg.read_timeout,
@@ -509,6 +512,38 @@ class MySQLClient:
         with self.connect(host) as conn:
             with conn.cursor() as cur:
                 cur.execute(f"KILL {int(connection_id)}")
+
+    def connection_id(self, conn) -> int | None:
+        """Идентификатор соединения для прерывания активного запроса."""
+        try:
+            return conn.thread_id()
+        except Exception:
+            return None
+
+    def test_connection(
+        self,
+        host: str,
+        port: int,
+        user: str,
+        password: str,
+    ) -> tuple[bool, str]:
+        """Проверка подключения с явными реквизитами (для диалога сервера)."""
+        try:
+            conn = pymysql.connect(
+                host=host,
+                port=port,
+                user=user,
+                password=password,
+                connect_timeout=self.cfg.connect_timeout,
+                cursorclass=DictCursor,
+                autocommit=True,
+                charset="utf8mb4",
+            )
+            conn.close()
+        except Exception as ex:
+            return False, str(ex)
+
+        return True, ""
 
     def server_catalog(
         self,

@@ -19,7 +19,7 @@ import time
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from common.mysql_client import mysql
+from common.server_registry import client_for
 from common.sql_splitter import split_statements
 
 
@@ -117,7 +117,7 @@ class QueryWorker(QObject):
             return
 
         try:
-            mysql.kill_connection(host, conn_id)
+            client_for(host).kill_connection(host, conn_id)
         except Exception:
             pass
 
@@ -160,9 +160,11 @@ class QueryWorker(QObject):
         результат (rows, columns, message)."""
         started_at = time.perf_counter()
 
-        with mysql.connect(host, database) as conn:
+        client = client_for(host)
+
+        with client.connect(host, database) as conn:
             self._active_host = host
-            self._active_id = conn.thread_id()
+            self._active_id = client.connection_id(conn)
 
             try:
                 per_statement = []
@@ -251,7 +253,7 @@ class QueryWorker(QObject):
     def _dispatch(self):
 
         if self._mode == "databases":
-            names = mysql.list_databases(self._host)
+            names = client_for(self._host).list_databases(self._host)
             self.databases.emit(names)
             return
 
@@ -296,7 +298,7 @@ class QueryWorker(QObject):
 
             if database == ALL_DATABASES:
                 try:
-                    names = mysql.list_databases(host)
+                    names = client_for(host).list_databases(host)
                 except Exception as ex:
                     self.error_target.emit(host, "", str(ex))
                     done += 1
@@ -349,9 +351,11 @@ class QueryWorker(QObject):
     def _export_target(self, host_name, db_name, writer, state) -> None:
         """Выполняет операторы на одном целевом сервере/БД, пишет строки
         в CSV. Состояние (колонки, заголовок, счётчики) ведётся в `state`."""
-        with mysql.connect(host_name, db_name) as conn:
+        client = client_for(host_name)
+
+        with client.connect(host_name, db_name) as conn:
             self._active_host = host_name
-            self._active_id = conn.thread_id()
+            self._active_id = client.connection_id(conn)
 
             try:
                 for statement in self._statements:
@@ -425,7 +429,7 @@ class QueryWorker(QObject):
 
                 if database == ALL_DATABASES:
                     try:
-                        names = mysql.list_databases(host)
+                        names = client_for(host).list_databases(host)
                     except Exception as ex:
                         self.error_target.emit(host, "", str(ex))
                         continue

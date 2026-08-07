@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
+    QMenu,
     QTreeWidget,
     QTreeWidgetItem,
 )
@@ -32,6 +33,9 @@ class ServersTree(QTreeWidget):
     tablesRequested = Signal(str, str)       # server, database
     tableSelectRequested = Signal(str, str, str)  # server, database, table
     selectionChangedNotify = Signal()
+    addServerRequested = Signal()
+    editServerRequested = Signal(str)        # server
+    removeServerRequested = Signal(str)      # server
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -43,6 +47,7 @@ class ServersTree(QTreeWidget):
         self.setItemsExpandable(True)
         self.setExpandsOnDoubleClick(False)
         self.setIndentation(18)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
 
         header = self.header()
         header.setStretchLastSection(True)
@@ -54,6 +59,7 @@ class ServersTree(QTreeWidget):
         self.itemExpanded.connect(self._tree_item_expanded)
         self.itemDoubleClicked.connect(self._double_click)
         self.itemSelectionChanged.connect(self.selectionChangedNotify)
+        self.customContextMenuRequested.connect(self._context_menu)
 
         # Кэш таблиц по серверам: {server: {db: [(table, size)]}}.
         # Заполняется при раскрытии сервера одним запросом, чтобы
@@ -347,6 +353,36 @@ class ServersTree(QTreeWidget):
             placeholder.setDisabled(True)
             return True
         return False
+
+    def _context_menu(self, pos) -> None:
+        """Контекстное меню: добавить/редактировать/удалить сервер."""
+        menu = QMenu(self)
+
+        item = self.itemAt(pos)
+
+        action_add = menu.addAction(icon("add", 16, "#2563eb"), "Add server")
+        action_add.triggered.connect(self.addServerRequested)
+
+        if item is not None and self.is_server_item(item):
+            server = self.server_name(item)
+
+            action_edit = menu.addAction(
+                icon("edit", 16, "#475569"),
+                f"Edit '{server}'",
+            )
+            action_edit.triggered.connect(
+                lambda: self.editServerRequested.emit(server)
+            )
+
+            action_remove = menu.addAction(
+                icon("delete_outline", 16, "#dc2626"),
+                f"Remove '{server}'",
+            )
+            action_remove.triggered.connect(
+                lambda: self.removeServerRequested.emit(server)
+            )
+
+        menu.exec(self.viewport().mapToGlobal(pos))
 
     def _double_click(self, item: QTreeWidgetItem) -> None:
         """Двойной клик: на таблице — SELECT *, на сервере/БД — раскрытие."""

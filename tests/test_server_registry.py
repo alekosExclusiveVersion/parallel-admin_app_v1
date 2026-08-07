@@ -1,0 +1,212 @@
+"""
+tests/test_server_registry.py
+
+Тесты реестра серверов: хранение/загрузка с шифрованием пароля,
+миграция из servers.txt, резолв реквизитов по хосту, CRUD,
+построение SELECT с учётом синтаксиса СУБД.
+"""
+
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from common.server_registry import (
+    ENGINE_MSSQL,
+    ENGINE_MYSQL,
+    ServerSpec,
+    build_select_sql,
+    default_port,
+    quote_ident,
+    registry,
+)
+
+
+def fake_config(**overrides) -> SimpleNamespace:
+    mysql = SimpleNamespace(
+        user=overrides.get("user", "koshkin"),
+        password=overrides.get("password", ""),
+        port=3306,
+    )
+    mssql = SimpleNamespace(user="sa", password="", port=1433)
+    advanced = SimpleNamespace(
+        servers_file=str(overrides.get("servers_file", "servers.json")),
+    )
+    return SimpleNamespace(mysql=mysql, mssql=mssql, advanced=advanced)
+
+
+class ServerRegistryTestBase(unittest.TestCase):
+    def setUp(self):
+        self._tmp = Path(tempfile.mkdtemp())
+        registry.servers_file = self._tmp / "servers.json"
+        registry.key_file = self._tmp / "servers.key"
+        registry._fernet = None
+        registry._loaded = False
+        registry._specs = []
+
+    def _save(self, specs):
+        registry.save(specs)
+
+    def _reload(self):
+        registry._loaded = False
+        return registry.load()
+
+
+class TestServerRegistryPersistence(ServerRegistryTestBase):
+
+    def test_save_load_round_trip(self):
+        self._save([
+            ServerSpec(host="db1.example.com", engine=ENGINE_MYSQL,
+                       user="u1", password="secret1"),
+            ServerSpec(host="sql1.example.com", engine=ENGINE_MSSQL,
+                       port=1433, user="sa", password="pass2"),
+        ])
+
+        specs = self._reload()
+        self.assertEqual(len(specs), 2)
+
+        by_host = {s.host: s for s in specs}
+        self.assertEqual(by_host["db1.example.com"].user, "u1")
+        self.assertEqual(by_host["db1.example.com"].password, "secret1")
+        self.assertEqual(by_host["db1.example.com"].engine, ENGINE_MYSQL)
+        self.assertEqual(by_host["sql1.example.com"].engine, ENGINE_MSSQL)
+        self.assertEqual(by_host["sql1.example.com"].port, 1433)
+        self.assertEqual(by_host["sql1.example.com"].password, "pass2")
+
+    def test_password_encrypted_at_rest(self):
+        self._save([
+            ServerSpec(host="db1", engine=ENGINE_MYSQL,
+                       user="u1", password="topsecret"),
+        ])
+
+        raw = registry.servers_file.read_text(encoding="utf-8")
+        self.assertNotIn("topsecret", raw)
+        self.assertIn("password", raw)
+
+    def test_missing_key_generates_and_round_trips(self):
+        self.assertFalse(registry.key_file.exists())
+        self._save([ServerSpec(host="h1", user="u", password="pw")])
+
+        self.assertTrue(registry.key_file.exists())
+        spec = self._reload()[0]
+        self.assertEqual(spec.password, "pw")
+
+    def test_corrupt_password_returns_empty(self):
+        self._save([ServerSpec(host="h1", user="u", password="pw")])
+        registry._fernet = None
+        # Перезаписываем пароль мусором (другой ключ)
+        registry.key_file.write_bytes(b"garbage-not-a-key")
+
+        spec = self._reload()[0]
+        self.assertEqual(spec.password, "")
+
+    def test_default_port_by_engine(self):
+        self.assertEqual(default_port(ENGINE_MYSQL), 3306)
+        self.assertEqual(default_port(ENGINE_MSSQL), 1433)
+
+
+class TestServerRegistryMigration(ServerRegistryTestBase):
+
+    def test_migrate_from_servers_txt(self):
+        txt = self._tmp / "servers.txt"
+        txt.write_text(
+            "p7ru1.example.com\np7ru2.example.com\n\n",
+            encoding="utf-8",
+        )
+
+        with patch(
+            "common.server_registry.config",
+            fake_config(
+                servers_file=str(registry.servers_file),
+                user="koshkin",
+                password="pw",
+            ),
+        ):
+            specs = registry.load()
+
+        self.assertEqual(len(specs), 2)
+        self.assertEqual(specs[0].host, "p7ru1.example.com")
+        self.assertEqual(specs[0].engine, ENGINE_MYSQL)
+        self.assertEqual(specs[0].user, "koshkin")
+        self.assertEqual(specs[0].password, "pw")
+
+        # После миграции появился servers.json
+        self.assertTrue(registry.servers_file.exists())
+
+
+class TestServerRegistryLookup(ServerRegistryTestBase):
+
+    def setUp(self):
+        super().setUp()
+        self._save([
+            ServerSpec(host="m", engine=ENGINE_MYSQL, user="mu", password="mp"),
+            ServerSpec(host="s", engine=ENGINE_MSSQL, user="su", password="sp"),
+        ])
+
+    def test_credentials_for_server(self):
+        self.assertEqual(
+            registry.credentials_for("m"),
+            ("mu", "mp", 3306),
+        )
+        self.assertEqual(
+            registry.credentials_for("s"),
+            ("su", "sp", 1433),
+        )
+
+    def test_credentials_fallback_to_config(self):
+        with patch(
+            "common.server_registry.config",
+            fake_config(user="global", password="gp"),
+        ):
+            self.assertEqual(
+                registry.credentials_for("unknown"),
+                ("global", "gp", 3306),
+            )
+
+    def test_engine_lookup(self):
+        self.assertEqual(registry.engine("m"), ENGINE_MYSQL)
+        self.assertEqual(registry.engine("s"), ENGINE_MSSQL)
+        self.assertEqual(registry.engine("unknown"), ENGINE_MYSQL)
+
+    def test_add_update_remove(self):
+        registry.add(ServerSpec(host="new", user="u", password="p"))
+        self.assertIsNotNone(registry.find("new"))
+
+        registry.update("new", ServerSpec(host="new2", user="u2", password="p2"))
+        self.assertIsNone(registry.find("new"))
+        self.assertEqual(registry.find("new2").user, "u2")
+
+        self.assertTrue(registry.remove("new2"))
+        self.assertFalse(registry.remove("new2"))
+
+
+class TestServerRegistrySql(ServerRegistryTestBase):
+
+    def test_quote_ident_mysql(self):
+        self.assertEqual(quote_ident(ENGINE_MYSQL, "ar_ru"), "`ar_ru`")
+
+    def test_quote_ident_mssql(self):
+        self.assertEqual(quote_ident(ENGINE_MSSQL, "MyDB"), "[MyDB]")
+
+    def test_build_select_mysql(self):
+        sql = build_select_sql(ENGINE_MYSQL, "ar_ru", "users", 1000)
+        self.assertEqual(sql, "SELECT * FROM `ar_ru`.`users` LIMIT 1000")
+
+    def test_build_select_mssql(self):
+        sql = build_select_sql(ENGINE_MSSQL, "MyDB", "users", 500)
+        self.assertEqual(
+            sql,
+            "SELECT TOP 500 * FROM [MyDB].[users]",
+        )
+
+    def test_build_select_mssql_with_schema(self):
+        sql = build_select_sql(ENGINE_MSSQL, "MyDB", "dbo.users", 100)
+        self.assertEqual(
+            sql,
+            "SELECT TOP 100 * FROM [MyDB].[dbo].[users]",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

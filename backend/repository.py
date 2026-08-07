@@ -1,38 +1,33 @@
-from pathlib import Path
+"""
+backend/repository.py
 
-from common.config import config
+Фасад над common.server_registry: загрузка/сохранение списка серверов
+с персональными реквизитами подключения (MySQL/MSSQL).
+"""
+
+from common.server_registry import ServerSpec, registry
 
 
 class Repository:
 
     def __init__(self):
-
-        self._servers = []
-
-        self.server_file = Path(
-            config.advanced.servers_file
-        )
+        self._registry = registry
 
     def load_servers(self):
-
-        if not self.server_file.exists():
-            return []
-
-        with self.server_file.open(
-            "r",
-            encoding="utf-8",
-        ) as file:
-
-            self._servers = [
-                line.strip()
-                for line in file
-                if line.strip()
-            ]
-
-        return self._servers
-
+        return self._registry.load()
 
     @property
     def servers(self):
+        return self._registry.specs()
 
-        return self._servers
+    def add_server(self, spec: ServerSpec) -> None:
+        self._registry.add(spec)
+
+    def update_server(self, old_host: str, spec: ServerSpec) -> None:
+        self._registry.update(old_host, spec)
+
+    def remove_server(self, host: str) -> bool:
+        return self._registry.remove(host)
+
+    def hosts(self) -> list[str]:
+        return self._registry.hosts()

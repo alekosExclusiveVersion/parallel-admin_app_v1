@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from common.mysql_client import mysql
+from common.server_registry import client_for
 
 
 class DbSizesWorker(QObject):
@@ -52,18 +52,20 @@ class DbSizesWorker(QObject):
             if self._stop:
                 break
 
-            # 1) Имена БД — мгновенно (быстрый SHOW DATABASES).
+            client = client_for(server)
+
+            # 1) Имена БД — мгновенно (быстрый список).
             try:
-                names = mysql.list_all_databases(server)
+                names = client.list_all_databases(server)
             except Exception as ex:
                 self.error.emit(server, "databases", str(ex))
                 continue
 
             self.databases_names.emit(server, names)
 
-            # 2) Размеры + таблицы — одним запросом к information_schema.
+            # 2) Размеры + таблицы — одним запросом к каталогу.
             try:
-                sizes, tables = mysql.server_catalog(server)
+                sizes, tables = client.server_catalog(server)
             except Exception as ex:
                 self.error.emit(server, "databases", str(ex))
                 continue
@@ -86,7 +88,7 @@ class DbSizesWorker(QObject):
             if self._stop:
                 break
             try:
-                sizes, tables = mysql.server_catalog(server)
+                sizes, tables = client_for(server).server_catalog(server)
             except Exception as ex:
                 self.error.emit(server, "refresh", str(ex))
                 continue
@@ -101,7 +103,7 @@ class DbSizesWorker(QObject):
             return
 
         try:
-            sizes = mysql.database_table_sizes(server, database)
+            sizes = client_for(server).database_table_sizes(server, database)
             self.tables.emit(server, database, sizes)
         except Exception as ex:
             self.error.emit(server, database, str(ex))

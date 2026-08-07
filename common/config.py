@@ -14,6 +14,7 @@ from pathlib import Path
 class MySQLConfig:
     user: str
     password: str
+    port: int
     connect_timeout: int
     read_timeout: int
     write_timeout: int
@@ -21,6 +22,17 @@ class MySQLConfig:
     pool_idle: int
     max_connections: int
     max_idle_connections: int
+    idle_timeout: int
+
+
+@dataclass(frozen=True)
+class MSSQLConfig:
+    user: str
+    password: str
+    port: int
+    connect_timeout: int
+    retry: int
+    pool_idle: int
     idle_timeout: int
 
 
@@ -72,6 +84,7 @@ class AdvancedConfig:
 @dataclass(frozen=True)
 class Config:
     mysql: MySQLConfig
+    mssql: MSSQLConfig
     parallel: ParallelConfig
     filter: FilterConfig
     logging: LoggingConfig
@@ -108,6 +121,7 @@ def load_config(config_file: str | Path | None = None) -> Config:
         mysql=MySQLConfig(
             user=p.get("mysql", "user"),
             password=p.get("mysql", "password"),
+            port=p.getint("mysql", "port", fallback=3306),
             connect_timeout=p.getint("mysql", "connect_timeout"),
             read_timeout=p.getint("mysql", "read_timeout"),
             write_timeout=p.getint("mysql", "write_timeout"),
@@ -128,6 +142,15 @@ def load_config(config_file: str | Path | None = None) -> Config:
                 "idle_timeout",
                 fallback=60,
             ),
+        ),
+        mssql=MSSQLConfig(
+            user=p.get("mssql", "user", fallback="sa"),
+            password=p.get("mssql", "password", fallback=""),
+            port=p.getint("mssql", "port", fallback=1433),
+            connect_timeout=p.getint("mssql", "connect_timeout", fallback=5),
+            retry=p.getint("mssql", "retry", fallback=3),
+            pool_idle=p.getint("mssql", "pool_idle", fallback=4),
+            idle_timeout=p.getint("mssql", "idle_timeout", fallback=60),
         ),
         parallel=ParallelConfig(
             workers=p.getint("parallel", "workers", fallback=8,),
@@ -171,7 +194,11 @@ def load_config(config_file: str | Path | None = None) -> Config:
             batch_size=p.getint("advanced", "batch_size"),
             export_csv=_bool(p, "advanced", "export_csv"),
             export_errors=_bool(p, "advanced", "export_errors"),
-            servers_file=p.get("advanced", "servers_file", fallback="servers.txt",),
+            servers_file=p.get(
+                "advanced",
+                "servers_file",
+                fallback="servers.json",
+            ),
         ),
     )
 

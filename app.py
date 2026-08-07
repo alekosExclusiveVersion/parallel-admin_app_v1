@@ -25,7 +25,6 @@ from PySide6.QtGui import QColor, QPalette
 
 from gui.application import App
 from gui.icons import app_icon
-from gui.login_dialog import LoginDialog
 
 
 def light_palette() -> QPalette:
@@ -75,11 +74,6 @@ def main() -> int:
 
     qt_app.setWindowIcon(app_icon())
 
-    login = LoginDialog()
-
-    if login.exec() != LoginDialog.Accepted:
-        return 0
-
     window = App()
 
     window.show()
@@ -91,9 +85,8 @@ def main() -> int:
     # с SIGSEGV (известная проблема PySide6 6.11 в frozen-сборках).
     window.close()
     window.deleteLater()
-    login.deleteLater()
     qt_app.processEvents()
-    del login, window
+    del window
 
     return rc
 
