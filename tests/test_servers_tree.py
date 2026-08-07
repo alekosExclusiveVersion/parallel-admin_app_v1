@@ -268,6 +268,38 @@ class TestServersTree(unittest.TestCase):
         self.assertEqual(srv.childCount(), 1)
         self.assertEqual(srv.child(0).text(0), "Нет БД")
 
+    def test_set_servers_with_display_name(self):
+        tree = ServersTree()
+        tree.set_servers([("Prod (db1.example.com)", "db1.example.com")])
+
+        srv = tree.topLevelItem(0)
+
+        self.assertEqual(srv.text(0), "Prod (db1.example.com)")
+        self.assertEqual(tree.display_name(srv), "Prod (db1.example.com)")
+        self.assertEqual(tree.server_name(srv), "db1.example.com")
+
+    def test_apply_sizes_keeps_display_name(self):
+        tree = ServersTree()
+        tree.set_servers([("Prod (db1)", "db1")])
+        srv = tree.topLevelItem(0)
+
+        tree.apply_sizes("db1", {"ar_a": 1000})
+
+        self.assertTrue(
+            srv.text(0).startswith("Prod (db1)  (1000.0 B)")
+        )
+        self.assertEqual(tree.server_name(srv), "db1")
+
+    def test_apply_databases_keeps_display_name(self):
+        tree = ServersTree()
+        tree.set_servers([("Prod (db1)", "db1")])
+        srv = tree.topLevelItem(0)
+
+        tree.apply_databases("db1", ["ar_a"])
+
+        self.assertEqual(srv.text(0), "Prod (db1)")
+        self.assertEqual(tree.server_name(srv), "db1")
+
 
 if __name__ == "__main__":
     unittest.main()

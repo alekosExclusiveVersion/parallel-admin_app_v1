@@ -274,7 +274,12 @@ class MainWindow(QWidget):
 
         hosts = [spec.host for spec in servers]
 
-        self.servers_tree.set_servers(hosts)
+        # В дереве показываем Name (или «Name (host)»), host остаётся
+        # целью подключения для check/search/консоли.
+        self.servers_tree.set_servers([
+            (spec.display_name(), spec.host)
+            for spec in servers
+        ])
 
         self.panel.set_servers(hosts)
 

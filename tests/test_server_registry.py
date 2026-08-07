@@ -105,6 +105,13 @@ class TestServerRegistryPersistence(ServerRegistryTestBase):
         self.assertEqual(default_port(ENGINE_MYSQL), 3306)
         self.assertEqual(default_port(ENGINE_MSSQL), 1433)
 
+    def test_display_name(self):
+        self.assertEqual(ServerSpec(host="h1").display_name(), "h1")
+        self.assertEqual(
+            ServerSpec(host="h1", name="Prod").display_name(),
+            "Prod (h1)",
+        )
+
 
 class TestServerRegistryMigration(ServerRegistryTestBase):
 

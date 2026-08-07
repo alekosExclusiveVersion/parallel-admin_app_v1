@@ -27,6 +27,10 @@ _LOADING = "Загрузка…"
 _NO_DB = "Нет БД"
 _NO_TABLES = "Нет таблиц"
 
+# Роль, в которой хранится отображаемое имя сервера (Name или host).
+# В Qt.UserRole всегда остаётся host — по нему работают check/search/консоль.
+_DISPLAY_ROLE = Qt.UserRole + 1
+
 
 class ServersTree(QTreeWidget):
     databasesRequested = Signal(list)        # серверы, для которых нужны размеры БД
@@ -72,10 +76,25 @@ class ServersTree(QTreeWidget):
 
     @staticmethod
     def server_name(item: QTreeWidgetItem | None) -> str:
-        """Имя сервера для top-level узла (без суффиксов размера)."""
+        """Host сервера для top-level узла (без суффиксов размера).
+
+        Возвращает host из Qt.UserRole — по нему работают воркеры
+        (check/search/консоль), независимо от отображаемого имени.
+        """
         if item is None:
             return ""
         return item.data(0, Qt.UserRole) or item.text(0)
+
+    @staticmethod
+    def display_name(item: QTreeWidgetItem | None) -> str:
+        """Отображаемое имя сервера (Name или host), без суффиксов размера."""
+        if item is None:
+            return ""
+        return (
+            item.data(0, _DISPLAY_ROLE)
+            or item.data(0, Qt.UserRole)
+            or item.text(0)
+        )
 
     @staticmethod
     def db_name(item: QTreeWidgetItem | None) -> str:
@@ -125,12 +144,24 @@ class ServersTree(QTreeWidget):
     # Наполнение
     # ----------------------------------------------------------
 
-    def set_servers(self, servers: list[str]) -> None:
+    def set_servers(self, servers: list[str] | list[tuple]) -> None:
+        """Заполняет дерево серверами.
+
+        Элемент может быть строкой-хостом либо парой (display_name, host):
+        display_name показывается в списке, host хранится в Qt.UserRole
+        и используется воркерами как цель подключения.
+        """
         self.clear()
 
-        for server in servers:
-            item = QTreeWidgetItem([server])
+        for entry in servers:
+            if isinstance(entry, (tuple, list)):
+                display, server = entry
+            else:
+                display = server = entry
+
+            item = QTreeWidgetItem([display])
             item.setData(0, Qt.UserRole, server)
+            item.setData(0, _DISPLAY_ROLE, display)
             item.setIcon(0, icon("dns", 16, "#2563eb"))
             # Заглушка-ребёнок, чтобы у сервера появился маркер раскрытия
             QTreeWidgetItem(item, [_PLACEHOLDER])
@@ -153,8 +184,7 @@ class ServersTree(QTreeWidget):
 
         for index in range(self.topLevelItemCount()):
             item = self.topLevelItem(index)
-            server = self.server_name(item)
-            item.setText(0, server)
+            item.setText(0, self.display_name(item))
             item.setIcon(0, icon("dns", 16, "#2563eb"))
             item.takeChildren()
             QTreeWidgetItem(item, [_PLACEHOLDER])
@@ -167,7 +197,7 @@ class ServersTree(QTreeWidget):
             if self.server_name(server_item) != server:
                 continue
 
-            server_item.setText(0, server)
+            server_item.setText(0, self.display_name(server_item))
             server_item.takeChildren()
 
             if not names:
@@ -195,7 +225,7 @@ class ServersTree(QTreeWidget):
             total = sum(sizes.values())
             server_item.setText(
                 0,
-                f"{server}  ({self.format_size(total)})",
+                f"{self.display_name(server_item)}  ({self.format_size(total)})",
             )
 
             placeholder_only = (
