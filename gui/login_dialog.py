@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -14,6 +15,30 @@ from common.mysql_client import mysql
 from common.mysql_session import session
 from backend.repository import Repository
 from gui.styles import LOGIN_DIALOG_STYLESHEET
+from gui.worker_thread import WorkerHost
+
+
+class _LoginWorker(QObject):
+    """Проверка подключения в фоновом потоке (не блокирует GUI)."""
+
+    finished = Signal(bool, str)
+
+    def run(self):
+        try:
+            servers = Repository().load_servers()
+
+            if not servers:
+                raise RuntimeError(
+                    "No servers found in servers.txt"
+                )
+
+            with mysql.connect(servers[0]):
+                pass
+
+        except Exception as ex:
+            self.finished.emit(False, str(ex))
+        else:
+            self.finished.emit(True, "")
 
 
 class LoginDialog(QDialog):
@@ -26,6 +51,8 @@ class LoginDialog(QDialog):
         )
 
         self.setMinimumWidth(350)
+
+        self._check_host = None
 
         self._build_ui()
 
@@ -101,32 +128,32 @@ class LoginDialog(QDialog):
 
         self.btn_connect.setEnabled(False)
         self.btn_connect.setText("Checking...")
-        self.btn_connect.repaint()
 
-        try:
+        host = WorkerHost(
+            _LoginWorker,
+            self,
+        )
 
-            servers = Repository().load_servers()
+        self._check_host = host
 
-            if not servers:
-                raise RuntimeError(
-                    "No servers found in servers.txt"
-                )
+        host.worker.finished.connect(
+            self._on_check_finished
+        )
 
-            with mysql.connect(servers[0]):
-                pass
+        host.thread.start()
 
-        except Exception as ex:
-
-            self.btn_connect.setEnabled(True)
-            self.btn_connect.setText("Connect")
-
-            self._show_error(
-                f"Connection failed: {ex}"
-            )
-            return
+    def _on_check_finished(self, ok: bool, message: str):
 
         self.btn_connect.setEnabled(True)
         self.btn_connect.setText("Connect")
+
+        self._check_host = None
+
+        if not ok:
+            self._show_error(
+                f"Connection failed: {message}"
+            )
+            return
 
         self.accept()
 

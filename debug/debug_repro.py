@@ -46,7 +46,7 @@ from gui.main_window import MainWindow
 w = MainWindow()
 w.show()
 
-w.server_list.item(0).setSelected(True)
+w.servers_tree.topLevelItem(0).setSelected(True)
 
 w._run_check()
 

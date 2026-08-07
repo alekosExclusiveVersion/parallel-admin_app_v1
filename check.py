@@ -26,14 +26,31 @@ def process_server(server: str):
 
     logger.info(f"{server}: подключение")
 
-    for db in mysql.list_databases(server):
+    # Одно соединение на сервер: список БД, проверка наличия cfg_settings
+    # и пакетное чтение настроек выполняются без переподключений.
+    with mysql.connect(server) as conn:
 
-        if not mysql.has_cfg_settings(server, db):
+        databases = mysql.list_databases_conn(conn)
+
+        eligible = [
+            db
+            for db in databases
+            if mysql.has_cfg_settings_conn(conn, db)
+        ]
+
+        scanned = {
+            item["database_name"]: item
+            for item in mysql.scan_settings_batch(conn, eligible)
+        }
+
+    for db in eligible:
+
+        item = scanned.get(db)
+
+        if item is None:
             continue
 
-        settings = mysql.get_settings(server, db)
-
-        country = settings.get(config.filter.country_setting, "").lower()
+        country = (item.get("country") or "").lower()
 
         if country != config.filter.country:
             continue
@@ -43,7 +60,7 @@ def process_server(server: str):
                 "server": server,
                 "database": db,
                 "country": country,
-                "value": settings.get(config.filter.target_setting, ""),
+                "value": item.get("target_value", ""),
             }
         )
 

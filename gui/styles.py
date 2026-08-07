@@ -7,6 +7,18 @@ gui/styles.py
 
 from __future__ import annotations
 
+from PySide6.QtGui import QColor
+
+# Цвета статусов и фона ошибок для таблицы Results.
+# Единый источник значений, чтобы не дублировать литералы в MainWindow.
+STATUS_COLORS = {
+    "OK": QColor("#16a34a"),
+    "WARNING": QColor("#d97706"),
+    "ERROR": QColor("#dc2626"),
+}
+
+ERROR_BG = QColor(255, 245, 245)
+
 SHARED_STYLESHEET = """
 QWidget#MainWindow{
     background:#f4f6f8;

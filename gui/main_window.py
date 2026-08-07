@@ -1,52 +1,26 @@
 from __future__ import annotations
 
-import csv
-import re
+import threading
 import time
 from datetime import datetime
 
-from PySide6.QtCore import (
-    Qt,
-    QSize,
-    QThread,
-    QTimer,
-)
-from PySide6.QtGui import (
-    QAction,
-    QColor,
-    QBrush,
-    QFontDatabase,
-    QKeySequence,
-    QShortcut,
-    QTextCursor,
-)
+from PySide6.QtCore import Qt, QSize, QTimer
+from PySide6.QtGui import QAction, QTextCursor
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
-    QTreeWidget,
-    QTreeWidgetItem,
-    QTableWidget,
-    QTableWidgetItem,
     QTextEdit,
     QFrame,
     QFileDialog,
-    QHeaderView,
     QToolBar,
     QToolButton,
     QProgressBar,
     QLineEdit,
     QCheckBox,
-    QComboBox,
-    QPushButton,
-    QAbstractItemView,
-    QApplication,
-    QMenu,
     QMessageBox,
-    QSplitter,
-    QPlainTextEdit,
-    QStyledItemDelegate,
+    QPushButton,
     QTabWidget,
 )
 
@@ -56,62 +30,24 @@ from backend.query_worker import ALL_DATABASES, QueryWorker
 from backend.db_search_worker import DatabaseSearchWorker
 from backend.db_sizes_worker import DbSizesWorker
 from common.sql_builder import sql_builder
-from common.sql_splitter import split_statements, statement_at
+from common.sql_security import is_write_statement
 from common.version import APP_VERSION
 from gui.icons import icon
-from gui.sql_highlighter import SQLHighlighter
 from gui.styles import SHARED_STYLESHEET
-from gui.widgets.filter_header import FilterHeaderRow
 from gui.widgets.collapsible_splitter import CollapsibleSplitter
-
-
-class ComboItemDelegate(QStyledItemDelegate):
-    """Отступы внутри пунктов выпадающего списка."""
-
-    def sizeHint(self, option, index):
-        size = super().sizeHint(option, index)
-        return QSize(
-            size.width() + 24,
-            max(size.height() + 12, 34),
-        )
-
-
-WRITE_KEYWORDS = {
-    "UPDATE", "INSERT", "DELETE", "ALTER", "DROP", "TRUNCATE",
-    "REPLACE", "CREATE", "GRANT", "REVOKE", "RENAME", "CALL",
-    "LOCK", "UNLOCK", "KILL", "LOAD",
-}
-
-
-def is_write_statement(sql: str) -> bool:
-    """True, если запрос может изменять данные."""
-    cleaned = re.sub(
-        r"/\*.*?\*/",
-        " ",
-        sql,
-        flags=re.DOTALL,
-    )
-    cleaned = re.sub(
-        r"(--|#)[^\n]*",
-        " ",
-        cleaned,
-    )
-    tokens = re.findall(
-        r"\b[A-Z_]+\b",
-        cleaned.upper(),
-    )
-    return any(
-        token in WRITE_KEYWORDS
-        for token in tokens
-    )
+from gui.worker_thread import WorkerHost
+from gui.servers_tree import ServersTree
+from gui.result_table import ResultTable
+from gui.sql_console import SqlConsolePanel
+from gui.queries_panel import QueriesPanel
 
 
 class MainWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        
+
         self.repository = Repository()
-        
+
         self._build_ui()
         self._create_backend()
         self._create_query_backend()
@@ -126,11 +62,9 @@ class MainWindow(QWidget):
 
     def _create_backend(self):
 
-        self.thread = QThread(self)
-
-        self.worker = CheckWorker()
-
-        self.worker.moveToThread(self.thread)
+        self.host = WorkerHost(CheckWorker, self)
+        self.thread = self.host.thread
+        self.worker = self.host.worker
 
         self.worker.started.connect(
             self._check_started
@@ -152,19 +86,11 @@ class MainWindow(QWidget):
         )
 
         self.worker.result.connect(
-            self.add_result
+            self.table.add_result
         )
 
         self.worker.query.connect(
             self._append_query
-        )
-
-        self.thread.started.connect(
-            self.worker.run
-        )
-
-        self.worker.finished.connect(
-            self.thread.quit
         )
 
         self.action_check.triggered.connect(
@@ -179,19 +105,9 @@ class MainWindow(QWidget):
 
     def _create_query_backend(self):
 
-        self.query_thread = QThread(self)
-
-        self.query_worker = QueryWorker()
-
-        self.query_worker.moveToThread(self.query_thread)
-
-        self.query_thread.started.connect(
-            self.query_worker.run
-        )
-
-        self.query_worker.finished.connect(
-            self.query_thread.quit
-        )
+        self.query_host = WorkerHost(QueryWorker, self)
+        self.query_thread = self.query_host.thread
+        self.query_worker = self.query_host.worker
 
         self.query_worker.query.connect(
             self._append_query
@@ -231,19 +147,9 @@ class MainWindow(QWidget):
 
     def _create_search_backend(self):
 
-        self.search_thread = QThread(self)
-
-        self.search_worker = DatabaseSearchWorker()
-
-        self.search_worker.moveToThread(self.search_thread)
-
-        self.search_thread.started.connect(
-            self.search_worker.run
-        )
-
-        self.search_worker.finished.connect(
-            self.search_thread.quit
-        )
+        self.search_host = WorkerHost(DatabaseSearchWorker, self)
+        self.search_thread = self.search_host.thread
+        self.search_worker = self.search_host.worker
 
         self.search_worker.started.connect(
             self._search_started
@@ -274,30 +180,28 @@ class MainWindow(QWidget):
 
     def _create_sizes_backend(self):
 
-        self.sizes_thread = QThread(self)
-
-        self.sizes_worker = DbSizesWorker()
-
-        self.sizes_worker.moveToThread(self.sizes_thread)
-
-        self.sizes_thread.started.connect(
-            self.sizes_worker.run
-        )
-
-        self.sizes_worker.finished.connect(
-            self.sizes_thread.quit
-        )
+        self.sizes_host = WorkerHost(DbSizesWorker, self)
+        self.sizes_thread = self.sizes_host.thread
+        self.sizes_worker = self.sizes_host.worker
 
         self.sizes_worker.databases.connect(
-            self._sizes_databases
+            self.servers_tree.apply_sizes
         )
 
         self.sizes_worker.tables.connect(
-            self._sizes_tables
+            self.servers_tree.apply_tables
         )
 
         self.sizes_worker.error.connect(
             self._sizes_error
+        )
+
+        self.servers_tree.databasesRequested.connect(
+            self.sizes_worker.request_databases
+        )
+
+        self.servers_tree.tablesRequested.connect(
+            self.sizes_worker.request_tables
         )
 
         # Постоянный поток-потребитель: стартует один раз,
@@ -313,6 +217,7 @@ class MainWindow(QWidget):
         percent = int(current * 100 / total)
 
         self.progress.setValue(percent)
+
     # ----------------------------------------------------------
     # Repository
     # ----------------------------------------------------------
@@ -321,29 +226,11 @@ class MainWindow(QWidget):
 
         servers = self.repository.load_servers()
 
-        self.server_list.clear()
+        self.servers_tree.set_servers(servers)
 
-        for server in servers:
-            item = QTreeWidgetItem([server])
-            item.setData(0, Qt.UserRole, server)
-            item.setIcon(0, icon("dns", 16, "#2563eb"))
-            # Заглушка-ребёнок, чтобы у сервера появился маркер раскрытия
-            QTreeWidgetItem(item, ["…"])
-            self.server_list.addTopLevelItem(item)
+        self.panel.set_servers(servers)
 
-        current_server = self.cb_server.currentText()
-
-        self.cb_server.blockSignals(True)
-
-        self.cb_server.clear()
-        self.cb_server.addItems(servers)
-
-        if current_server:
-            self.cb_server.setCurrentText(current_server)
-
-        self.cb_server.blockSignals(False)
-
-        if self.cb_server.currentText().strip():
+        if self.panel.current_host().strip():
             self._sql_refresh_databases()
 
         count = len(servers)
@@ -361,18 +248,17 @@ class MainWindow(QWidget):
             f"Loaded {count} server(s)."
         )
 
-
     # ----------------------------------------------------------
     # Refresh
     # ----------------------------------------------------------
 
     def _refresh_servers(self):
 
-        previous = self.server_list.topLevelItemCount()
+        previous = self.servers_tree.topLevelItemCount()
 
         self._load_servers()
 
-        current = self.server_list.topLevelItemCount()
+        current = self.servers_tree.topLevelItemCount()
 
         self.append_log(
             "SUCCESS",
@@ -388,13 +274,8 @@ class MainWindow(QWidget):
         if self.thread.isRunning():
             return
 
-        self.clear_results()
-
-        self._results_source = "check"
-
-        self._update_only_errors_visibility()
-
-        self.table.setSortingEnabled(False)
+        self.table.clear_results()
+        self.table.results_source = "check"
 
         self.progress.setValue(0)
 
@@ -404,11 +285,7 @@ class MainWindow(QWidget):
 
         self.table.clearSelection()
 
-        servers = [
-            self._server_name(item)
-            for item in self.server_list.selectedItems()
-            if self._is_server_item(item)
-        ]
+        servers = self.servers_tree.selected_servers()
 
         self.worker.set_servers(servers)
 
@@ -450,22 +327,17 @@ class MainWindow(QWidget):
     def _check_finished(self):
 
         self.action_check.setEnabled(True)
-        
+
         self.action_stop.setEnabled(False)
 
         self.table.setSortingEnabled(True)
 
-        self.table.resizeColumnToContents(0)
-        self.table.resizeColumnToContents(1)
-        self.table.resizeColumnToContents(2)
-        self.table.resizeColumnToContents(3)
-        self.table.resizeColumnToContents(4)
-        self.table.resizeColumnToContents(5)
-        self.table.resizeColumnToContents(6)
+        for index in range(self.table.columnCount()):
+            self.table.resizeColumnToContents(index)
 
-        self._sync_filter_columns()
+        self.table.sync_filter_columns()
 
-        self._filter_results()
+        self.table.apply_filters()
 
         self.progress.setValue(100)
 
@@ -476,12 +348,16 @@ class MainWindow(QWidget):
             "Check completed.",
         )
         self._elapsed_timer.stop()
-        
+
         self._started_at = None
 
         # Сбрасываем кэшированные размеры БД/таблиц,
         # чтобы при следующем раскрытии узлов были свежие данные.
-        self._reset_server_sizes()
+        self.servers_tree.reset_sizes()
+
+    # ----------------------------------------------------------
+    # UI
+    # ----------------------------------------------------------
 
     def _build_ui(self):
         self.setObjectName("MainWindow")
@@ -669,28 +545,8 @@ class MainWindow(QWidget):
 
         server_layout.addLayout(buttons)
 
-        self.server_list = QTreeWidget()
-        self.server_list.setColumnCount(1)
-        self.server_list.setHeaderHidden(True)
-        self.server_list.setSelectionMode(
-            QAbstractItemView.ExtendedSelection
-        )
-        self.server_list.setRootIsDecorated(True)
-        self.server_list.setItemsExpandable(True)
-        self.server_list.setExpandsOnDoubleClick(False)
-        self.server_list.setIndentation(18)
-
-        header = self.server_list.header()
-        header.setStretchLastSection(True)
-        header.setSectionResizeMode(QHeaderView.Stretch)
-        self.server_list.setVerticalScrollBarPolicy(
-            Qt.ScrollBarAsNeeded
-        )
-        self.server_list.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarAsNeeded
-        )
-
-        server_layout.addWidget(self.server_list)
+        self.servers_tree = ServersTree()
+        server_layout.addWidget(self.servers_tree)
 
         body_splitter.addWidget(self.server_frame)
 
@@ -735,78 +591,15 @@ class MainWindow(QWidget):
 
         filter_layout.addWidget(self.chk_only_errors)
 
-        # убрать текстовую кнопку Reset Filters — очищение слева в текстовом поле
-
         table_layout.addLayout(filter_layout)
 
-        # Строка поколоночных фильтров создаётся как overlay-дочерний виджет
-        # самой таблицы и закрепляется непосредственно под QHeaderView.
-        self.filter_header = FilterHeaderRow()
-        self.filter_header.setObjectName("FilterHeaderRow")
-
-        self.table = QTableWidget()
-
-        # Колонки заполняются динамически при выполнении запроса:
-        # Check → clear_results(), SQL → _fill_sql_result().
-
-        self.table.verticalHeader().setVisible(False)
-
-        self.table.verticalHeader().setDefaultSectionSize(28)
-
-        self.table.verticalHeader().setSectionResizeMode(
-            QHeaderView.Fixed
-        )
-
-        header = self.table.horizontalHeader()
-
-        header.setStretchLastSection(True)
-
-        header.setSectionResizeMode(QHeaderView.Interactive)
-
-        self.table.setAlternatingRowColors(True)
-
-        self.table.setSortingEnabled(True)
-
-        self.table.setSelectionBehavior(
-            QTableWidget.SelectRows
-        )
-
-        self.table.setSelectionMode(
-            QTableWidget.SingleSelection
-        )
-
-        self.table.setEditTriggers(
-            QTableWidget.NoEditTriggers
-        )
-
-        self.table.setShowGrid(False)
-
-        self.table.setWordWrap(False)
-
-        self.table.setCornerButtonEnabled(False)
-
-        self.table.setFocusPolicy(Qt.StrongFocus)
-
-        # Встраиваем строку фильтров в таблицу. Поля используют геометрию
-        # QHeaderView: вертикальная прокрутка данных их не двигает, а
-        # горизонтальная прокрутка перемещает их вместе с колонками.
-        self.filter_header.bind(self.table)
-
-        # ----------------------------------------------------------
-        # ResultTable signals
-        # ----------------------------------------------------------
-
-        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
-
-        self.table.customContextMenuRequested.connect(
-            self._show_table_menu
-        )
-
-        self.table.itemDoubleClicked.connect(
-            self._table_double_click
-        )
-
+        self.table = ResultTable()
         table_layout.addWidget(self.table)
+
+        self.table.attach_filters(
+            self.result_search,
+            self.chk_only_errors,
+        )
 
         # ----------------------------------------------------------
         # Log Panel UI
@@ -856,72 +649,10 @@ class MainWindow(QWidget):
         # Queries Panel UI
         # ----------------------------------------------------------
 
-        queries_frame = QFrame()
-        queries_frame.setObjectName("TabPage")
-
-        queries_layout = QVBoxLayout(queries_frame)
-        queries_layout.setContentsMargins(8, 8, 8, 8)
-        queries_layout.setSpacing(8)
-
-        qtop = QHBoxLayout()
-
-        self.lbl_query_log = QLabel("Query log")
-        self.lbl_query_log.setObjectName("SectionTitle")
-        qtop.addWidget(self.lbl_query_log)
-
-        qtop.addStretch()
-
-        self.btn_query_clear = QToolButton()
-        self.btn_query_clear.setObjectName("btn_icon")
-        self.btn_query_clear.setIcon(icon("delete_outline"))
-        self.btn_query_clear.setIconSize(QSize(16, 16))
-        self.btn_query_clear.setToolTip("Clear query log")
-
-        qtop.addWidget(self.btn_query_clear)
-
-        queries_layout.addLayout(qtop)
-
-        self.query_log = QPlainTextEdit()
-        self.query_log.setReadOnly(True)
-        self.query_log.setMaximumBlockCount(2000)
-
-        queries_layout.addWidget(self.query_log)
-
-        self.lbl_scan_template = QLabel("Scan template")
-        self.lbl_scan_template.setObjectName("SectionTitle")
-        queries_layout.addWidget(self.lbl_scan_template)
-
-        self.query_editor = QPlainTextEdit()
-        self.query_editor.setLineWrapMode(
-            QPlainTextEdit.NoWrap
-        )
-        self.query_editor.setPlainText(
+        self.queries_panel = QueriesPanel()
+        self.queries_panel.set_template(
             sql_builder.scan_template
         )
-
-        queries_layout.addWidget(self.query_editor)
-
-        hint = QLabel(
-            "Placeholders: {db} {dbq} {table} {country} {target}"
-        )
-        hint.setStyleSheet(
-            "color:#94a3b8;font-size:12px;"
-        )
-
-        queries_layout.addWidget(hint)
-
-        qbuttons = QHBoxLayout()
-
-        qbuttons.addStretch()
-
-        self.btn_apply = QPushButton("Apply")
-        self.btn_rerun = QPushButton("Run check")
-        self.btn_rerun.setObjectName("btn_primary")
-
-        qbuttons.addWidget(self.btn_apply)
-        qbuttons.addWidget(self.btn_rerun)
-
-        queries_layout.addLayout(qbuttons)
 
         # ----------------------------------------------------------
         # SQL Console Panel UI
@@ -930,136 +661,12 @@ class MainWindow(QWidget):
         sql_console_frame = QFrame()
         self.sql_console_frame = sql_console_frame
 
+        self.panel = SqlConsolePanel(sql_console_frame)
+
         sql_console_layout = QVBoxLayout(sql_console_frame)
-        sql_console_layout.setContentsMargins(8, 8, 8, 8)
-        sql_console_layout.setSpacing(8)
-
-        sctop = QHBoxLayout()
-
-        self.lbl_sql_console = QLabel("SQL Console")
-        self.lbl_sql_console.setObjectName("SectionTitle")
-        sctop.addWidget(self.lbl_sql_console)
-
-        sctop.addStretch()
-
-        self.btn_sql_refresh_db = QToolButton()
-        self.btn_sql_refresh_db.setObjectName("btn_icon")
-        self.btn_sql_refresh_db.setIcon(icon("refresh"))
-        self.btn_sql_refresh_db.setIconSize(QSize(16, 16))
-        self.btn_sql_refresh_db.setToolTip("Refresh databases")
-
-        self.btn_sql_clear = QToolButton()
-        self.btn_sql_clear.setObjectName("btn_icon")
-        self.btn_sql_clear.setIcon(icon("delete_outline"))
-        self.btn_sql_clear.setIconSize(QSize(16, 16))
-        self.btn_sql_clear.setToolTip("Clear console")
-
-        sctop.addWidget(self.btn_sql_refresh_db)
-        sctop.addWidget(self.btn_sql_clear)
-
-        sql_console_layout.addLayout(sctop)
-
-        scontrols = QHBoxLayout()
-
-        self.cb_server = QComboBox()
-        self.cb_server.setEditable(True)
-        self.cb_server.setMinimumWidth(180)
-        self.cb_server.setSizeAdjustPolicy(
-            QComboBox.AdjustToMinimumContentsLengthWithIcon
-        )
-        self.cb_server.lineEdit().setStyleSheet(
-            "border:none;background:transparent;padding:0;"
-        )
-        self.cb_server.view().setItemDelegate(
-            ComboItemDelegate(self.cb_server.view())
-        )
-
-        self.cb_database = QComboBox()
-        self.cb_database.setEditable(True)
-        self.cb_database.setMinimumWidth(160)
-        self.cb_database.setSizeAdjustPolicy(
-            QComboBox.AdjustToMinimumContentsLengthWithIcon
-        )
-        self.cb_database.lineEdit().setStyleSheet(
-            "border:none;background:transparent;padding:0;"
-        )
-        self.cb_database.view().setItemDelegate(
-            ComboItemDelegate(self.cb_database.view())
-        )
-
-        scontrols.addWidget(self.cb_server)
-        scontrols.addWidget(self.cb_database)
-
-        self.chk_write = QCheckBox("Разрешить запросы на запись")
-        scontrols.addWidget(self.chk_write)
-
-        scontrols.addStretch()
-
-        sql_console_layout.addLayout(scontrols)
-
-        scope_row = QHBoxLayout()
-
-        self.chk_all_servers = QCheckBox(
-            "Все выбранные серверы"
-        )
-        self.chk_all_servers.setToolTip(
-            "Выполнять на серверах, выбранных в списке"
-        )
-
-        self.chk_all_databases = QCheckBox(
-            "Все базы данных"
-        )
-        self.chk_all_databases.setToolTip(
-            "Выполнять по всем базам данных каждого сервера"
-        )
-
-        scope_row.addWidget(self.chk_all_servers)
-        scope_row.addWidget(self.chk_all_databases)
-
-        scope_row.addStretch()
-
-        sql_console_layout.addLayout(scope_row)
-
-        # Ряд кнопок Run/Stop непосредственно над полем ввода SQL
-        run_row = QHBoxLayout()
-
-        run_row.addStretch()
-
-        self.btn_sql_run = QPushButton("Run")
-        self.btn_sql_run.setObjectName("btn_primary")
-        self.btn_sql_run.setToolTip(
-            "Run script (Cmd/Ctrl+Shift+Enter); "
-            "run selection or statement under cursor (Cmd/Ctrl+Enter)"
-        )
-
-        run_row.addWidget(self.btn_sql_run)
-
-        self.btn_sql_stop = QPushButton("Stop")
-        self.btn_sql_stop.setObjectName("btn_danger")
-        self.btn_sql_stop.setToolTip("Stop running query")
-        self.btn_sql_stop.setEnabled(False)
-
-        run_row.addWidget(self.btn_sql_stop)
-
-        sql_console_layout.addLayout(run_row)
-
-        self.sql_editor = QPlainTextEdit()
-        self.sql_editor.setLineWrapMode(
-            QPlainTextEdit.NoWrap
-        )
-        self.sql_editor.setPlaceholderText(
-            "Write SQL query... Cmd/Ctrl+Enter to run selection "
-            "or statement under cursor, Cmd/Ctrl+Shift+Enter to run all"
-        )
-        self.sql_editor.setTabStopDistance(40)
-
-        console_font = QFontDatabase.systemFont(
-            QFontDatabase.FixedFont
-        )
-        console_font.setPointSize(12)
-        self.sql_editor.setFont(console_font)
-
-        sql_console_layout.addWidget(self.sql_editor)
+        sql_console_layout.setContentsMargins(0, 0, 0, 0)
+        sql_console_layout.setSpacing(0)
+        sql_console_layout.addWidget(self.panel)
 
         # ----------------------------------------------------------
         # Database Search Block UI (над SQL Console)
@@ -1127,7 +734,7 @@ class MainWindow(QWidget):
         tabs = QTabWidget()
         tabs.addTab(table_frame, "Results")
         tabs.addTab(log_frame, "Logs")
-        tabs.addTab(queries_frame, "Queries")
+        tabs.addTab(self.queries_panel, "Queries")
 
         self.tabs_frame = QFrame()
         self.tabs_frame.setObjectName("TabsBlock")
@@ -1160,27 +767,29 @@ class MainWindow(QWidget):
         # Signals
         # ----------------------------------------------------------
 
-        self.server_list.itemSelectionChanged.connect(
+        self.servers_tree.selectionChangedNotify.connect(
             self._update_selected_count
         )
 
         self.btn_select_all.clicked.connect(
-            self.server_list.selectAll
+            self.servers_tree.selectAll
         )
 
         self.btn_clear.clicked.connect(
-            self.server_list.clearSelection
+            self.servers_tree.clearSelection
         )
 
         self.btn_invert.clicked.connect(
-            self._invert_selection
+            self.servers_tree.invert_selection
         )
 
         self.search.textChanged.connect(
-            self._filter_servers
+            self.servers_tree.filter
         )
 
-        # clear via built-in clear button in search field
+        self.servers_tree.tableSelectRequested.connect(
+            self._run_table_select
+        )
 
         self.btn_log_clear.clicked.connect(
             self.log.clear
@@ -1194,47 +803,57 @@ class MainWindow(QWidget):
             self._save_log
         )
 
-        self.server_list.itemExpanded.connect(
-            self._tree_item_expanded
+        self.table.visibilityRequested.connect(
+            self._ensure_results_visible
         )
 
-        self.server_list.itemDoubleClicked.connect(
-            self._server_tree_double_click
+        self.table.dbSelected.connect(
+            self._apply_result_to_console
         )
 
-        self.btn_query_clear.clicked.connect(
-            self.query_log.clear
+        self.table.logMessage.connect(
+            self.append_log
         )
 
-        self.btn_apply.clicked.connect(
-            self._apply_query_template
+        self.panel.runRequested.connect(
+            self._run_sql
         )
 
-        self.btn_rerun.clicked.connect(
-            self._run_check
+        self.panel.stopRequested.connect(
+            self._sql_stop
         )
 
-        self.btn_sql_refresh_db.clicked.connect(
+        self.panel.refreshDatabasesRequested.connect(
             self._sql_refresh_databases
         )
 
-        self.btn_sql_clear.clicked.connect(
+        self.panel.clearRequested.connect(
             self._sql_clear
         )
 
-        self.btn_sql_run.clicked.connect(
-            self._sql_run
+        self.panel.serverChanged.connect(
+            self._sql_server_changed
         )
 
-        self.btn_sql_stop.clicked.connect(
-            self._sql_stop
+        self.panel.scopeChanged.connect(
+            self._sql_scope_changed
+        )
+
+        self.queries_panel.applyRequested.connect(
+            self._apply_query_template
+        )
+
+        self.queries_panel.rerunRequested.connect(
+            self._run_check
+        )
+
+        self.queries_panel.clearRequested.connect(
+            self.queries_panel.log.clear
         )
 
         self.btn_search.clicked.connect(
             self._search_run
         )
-
-        # clear via built-in clear button in mask field
 
         self.btn_search_stop.clicked.connect(
             self._search_stop
@@ -1242,39 +861,6 @@ class MainWindow(QWidget):
 
         self.ed_search_mask.returnPressed.connect(
             self._search_run
-        )
-
-        self.chk_all_servers.toggled.connect(
-            self._sql_scope_changed
-        )
-
-        self.chk_all_databases.toggled.connect(
-            self._sql_scope_changed
-        )
-
-        self.cb_server.activated.connect(
-            self._sql_server_changed
-        )
-
-        self.sql_run_shortcut = QShortcut(
-            QKeySequence(Qt.CTRL | Qt.Key_Return),
-            self,
-        )
-        self.sql_run_shortcut.activated.connect(
-            self._sql_run_context
-        )
-
-        # Cmd/Ctrl+Shift+Enter — выполнить весь скрипт
-        self.sql_run_all_shortcut = QShortcut(
-            QKeySequence(Qt.CTRL | Qt.SHIFT | Qt.Key_Return),
-            self,
-        )
-        self.sql_run_all_shortcut.activated.connect(
-            self._sql_run
-        )
-
-        self.sql_highlighter = SQLHighlighter(
-            self.sql_editor.document()
         )
 
         # Панель инструментов размещена в splitter, чтобы её можно было
@@ -1300,44 +886,16 @@ class MainWindow(QWidget):
         self._elapsed_timer = QTimer(self)
         self._elapsed_timer.setInterval(1000)
         self._elapsed_timer.timeout.connect(
-        self._update_elapsed
+            self._update_elapsed
         )
 
-        self._filter_timer = QTimer(self)
-        self._filter_timer.setSingleShot(True)
-        self._filter_timer.setInterval(40)
-        self._filter_timer.timeout.connect(
-            self._filter_results
-        )
-
-        self._results_source = None
-
-        self._update_only_errors_visibility()
-
-        self.result_search.textChanged.connect(
-            self._on_result_search_changed
-        )
-
-        self.chk_only_errors.toggled.connect(
-            self._filter_results
-        )
-
-        self.filter_header.filterChanged.connect(
-            self._on_result_search_changed
-        )
-
-        # фильтры очищаются через встроенную кнопку clear в поле result_search
     # --------------------------------------------------------------
     # Slots
     # --------------------------------------------------------------
 
     def _update_selected_count(self):
-        selected = [
-            item for item in self.server_list.selectedItems()
-            if self._is_server_item(item)
-        ]
         self.lbl_servers_title.setText(
-            f"Servers — Selected: {len(selected)}"
+            f"Servers — Selected: {self.servers_tree.selected_count()}"
         )
 
     def _body_section_double_clicked(self, section: int) -> None:
@@ -1373,251 +931,21 @@ class MainWindow(QWidget):
             sizes[2] = 0
             self.right_splitter.setSizes(sizes)
 
-    def _invert_selection(self):
-        for index in range(self.server_list.topLevelItemCount()):
-            item = self.server_list.topLevelItem(index)
-            item.setSelected(not item.isSelected())
-
-        self._update_selected_count()
-
-    def _filter_servers(self, text):
-        text = text.lower().strip()
-
-        for index in range(self.server_list.topLevelItemCount()):
-            self._filter_tree_item(
-                self.server_list.topLevelItem(index), text
-            )
-
-    def _filter_tree_item(self, item: QTreeWidgetItem, text: str):
-        """Рекурсивно показывает/скрывает узлы дерева по вхождению text."""
-        if not text:
-            item.setHidden(False)
-            for i in range(item.childCount()):
-                child = item.child(i)
-                child.setHidden(False)
-                self._filter_tree_item(child, "")
-            return
-
-        # Ищем вхождение в самом узле или любом из потомков
-        self_match = text in item.text(0).lower()
-        child_match = False
-
-        for i in range(item.childCount()):
-            child = item.child(i)
-            if self._filter_tree_item(child, text):
-                child_match = True
-
-        visible = self_match or child_match
-        item.setHidden(not visible)
-        return visible
-
-    # ----------------------------------------------------------
-    # Server tree (раскрывающийся список серверов/БД/таблиц)
-    # ----------------------------------------------------------
-
-    @staticmethod
-    def _server_name(item: QTreeWidgetItem | None) -> str:
-        """Имя сервера для top-level узла (без суффиксов размера)."""
-        if item is None:
-            return ""
-        return item.data(0, Qt.UserRole) or item.text(0)
-
-    @staticmethod
-    def _db_name(item: QTreeWidgetItem | None) -> str:
-        """Имя БД для узла второго уровня."""
-        if item is None:
-            return ""
-        return item.data(0, Qt.UserRole) or item.text(0)
-
-    @staticmethod
-    def _is_server_item(item: QTreeWidgetItem | None) -> bool:
-        return item is not None and item.parent() is None
-
-    @staticmethod
-    def _is_db_item(item: QTreeWidgetItem | None) -> bool:
-        return (
-            item is not None
-            and item.parent() is not None
-            and item.parent().parent() is None
-        )
-
-    @staticmethod
-    def _is_table_item(item: QTreeWidgetItem | None) -> bool:
-        """Узел таблицы — третий уровень (сервер → БД → таблица)."""
-        return (
-            item is not None
-            and item.parent() is not None
-            and item.parent().parent() is not None
-            and item.parent().parent().parent() is None
-        )
-
-    def _format_size(self, size_bytes: int) -> str:
-        size = float(size_bytes)
-        for unit in ("B", "KB", "MB", "GB", "TB"):
-            if size < 1024 or unit == "TB":
-                return f"{size:.1f} {unit}"
-            size /= 1024
-        return f"{size:.1f} TB"
-
-    def _reset_server_sizes(self):
-        """Сбрасывает загруженные размеры БД/таблиц, чтобы при
-        следующем раскрытии узла подтянулись свежие данные."""
-        for index in range(self.server_list.topLevelItemCount()):
-            item = self.server_list.topLevelItem(index)
-            server = self._server_name(item)
-            item.setText(0, server)
-            item.setIcon(0, icon("dns", 16, "#2563eb"))
-            item.takeChildren()
-            # Заглушка-ребёнок для появления маркера раскрытия
-            QTreeWidgetItem(item, ["…"])
-
-    def _tree_item_expanded(self, item: QTreeWidgetItem):
-        """Загружает дочерние узлы при раскрытии сервера или БД."""
-        if self._is_server_item(item):
-            self._load_server_children(item)
-        elif self._is_db_item(item):
-            self._load_db_children(item)
-
-    def _load_server_children(self, item: QTreeWidgetItem):
-        """Загружает список БД с размерами для сервера."""
-        if item.childCount() == 1 and item.child(0).text(0) == "…":
-            item.takeChildren()
-            placeholder = QTreeWidgetItem(item, ["Загрузка…"])
-            placeholder.setDisabled(True)
-
-            server = self._server_name(item)
-            self.sizes_worker.request_databases([server])
-
-    def _load_db_children(self, item: QTreeWidgetItem):
-        """Загружает таблицы с размерами для БД."""
-        if item.childCount() == 1 and item.child(0).text(0) == "…":
-            item.takeChildren()
-            placeholder = QTreeWidgetItem(item, ["Загрузка…"])
-            placeholder.setDisabled(True)
-
-            server = self._server_name(item.parent())
-            database = self._db_name(item)
-            self.sizes_worker.request_tables(server, database)
-
-    def _table_name(self, item: QTreeWidgetItem | None) -> str:
-        """Имя таблицы для узла третьего уровня (без суффикса размера)."""
-        if item is None:
-            return ""
-        return item.data(0, Qt.UserRole) or item.text(0).split("  (")[0].strip()
-
-    def _server_tree_double_click(self, item: QTreeWidgetItem):
-        """Двойной клик: на таблице — SELECT *, на сервере/БД — раскрытие."""
-        if self._is_table_item(item):
-            server = self._server_name(item.parent().parent())
-            database = self._db_name(item.parent())
-            table = self._table_name(item)
-
-            if not server or not database or not table:
-                return
-
-            self._run_table_select(server, database, table)
-            return
-
-        # Сервер или БД — вручную раскрыть/свернуть узел
-        if item.isExpanded():
-            item.setExpanded(False)
-        else:
-            item.setExpanded(True)
-            self._tree_item_expanded(item)
-
-    def _run_table_select(self, server: str, database: str, table: str):
-        """Выполняет SELECT * FROM `db`.`table` в фоновом потоке."""
-        # Если поток занят (например, загрузкой списка БД) — останавливаем его,
-        # чтобы SELECT гарантированно выполнился.
-        if self.query_thread.isRunning():
-            self.query_worker.stop()
-            self.query_thread.wait(3000)
-
-        sql = f"SELECT * FROM `{database}`.`{table}` LIMIT 1000"
-
-        self.table.clear()
-        self.table.setColumnCount(0)
-        self.table.setRowCount(0)
-        self.table.setSortingEnabled(False)
-
-        self._results_source = "sql"
-        self._update_only_errors_visibility()
-
-        self.lbl_sql_status.setText(
-            f"Running {server}.{database}.{table}..."
-        )
-        self._sql_busy(True)
-
-        # Авто-показ блока Results
+    def _ensure_results_visible(self, *_args) -> None:
         if not self.tabs_frame.isVisible():
             self._toggle_results_panel(True)
 
-        self.query_worker.set_multi_request(
-            [(server, database)],
-            sql,
-            1000,
-        )
-        self.query_thread.start()
+    def _apply_result_to_console(self, server: str, database: str) -> None:
+        self.panel.set_target(server, database)
 
         self.append_log(
-            "INFO",
-            f"SELECT * FROM `{database}`.`{table}` @ {server}",
+            "SUCCESS",
+            f"Result applied to console: [{server}.{database}]",
         )
 
-    def _sizes_databases(self, server: str, sizes: dict):
-        for index in range(self.server_list.topLevelItemCount()):
-            server_item = self.server_list.topLevelItem(index)
-            if self._server_name(server_item) != server:
-                continue
-
-            total = sum(sizes.values())
-            server_item.setText(
-                0,
-                f"{server}  ({self._format_size(total)})",
-            )
-            server_item.takeChildren()
-
-            if not sizes:
-                QTreeWidgetItem(server_item, ["Нет БД"])
-                break
-
-            for db_name, db_size in sizes.items():
-                db_item = QTreeWidgetItem(
-                    server_item,
-                    [f"{db_name}  ({self._format_size(db_size)})"],
-                )
-                db_item.setData(0, Qt.UserRole, db_name)
-                db_item.setIcon(0, icon("storage", 16, "#7c3aed"))
-                # Заглушка для раскрытия БД
-                QTreeWidgetItem(db_item, ["…"])
-            break
-
-    def _sizes_tables(self, server: str, database: str, tables: list):
-        for index in range(self.server_list.topLevelItemCount()):
-            server_item = self.server_list.topLevelItem(index)
-            if self._server_name(server_item) != server:
-                continue
-
-            for db_index in range(server_item.childCount()):
-                db_item = server_item.child(db_index)
-                if self._db_name(db_item) != database:
-                    continue
-
-                db_item.takeChildren()
-
-                if not tables:
-                    QTreeWidgetItem(db_item, ["Нет таблиц"])
-                    break
-
-                for table_name, table_size in tables:
-                    table_item = QTreeWidgetItem(
-                        db_item,
-                        [f"{table_name}  ({self._format_size(table_size)})"],
-                    )
-                    table_item.setData(0, Qt.UserRole, table_name)
-                    table_item.setIcon(0, icon("grid_on", 16, "#16a34a"))
-                break
-            break
+    # ----------------------------------------------------------
+    # Sizes
+    # ----------------------------------------------------------
 
     def _sizes_error(self, server: str, context: str, message: str):
         self.append_log(
@@ -1625,229 +953,6 @@ class MainWindow(QWidget):
             f"Sizes [{server}/{context}]: {message}",
         )
 
-    # ----------------------------------------------------------
-    # ResultTable
-    # ----------------------------------------------------------
-
-    _STATUS_COLORS = {
-        "OK": QColor("#16a34a"),
-        "WARNING": QColor("#d97706"),
-        "ERROR": QColor("#dc2626"),
-    }
-    _ERROR_BG = QColor(255, 245, 245)
-
-    def _add_table_row(self, values: list[str], status_col: int | None = None):
-        """Вставляет строку в self.table и применяет раскраску статуса."""
-        if not self.tabs_frame.isVisible():
-            self._toggle_results_panel(True)
-
-        table = self.table
-        row = table.rowCount()
-        table.insertRow(row)
-
-        col_count = table.columnCount()
-
-        # Выравнивание количества значений
-        padded = list(values)
-        if len(padded) > col_count:
-            padded = padded[:col_count]
-        else:
-            padded += [""] * (col_count - len(padded))
-
-        for col, text in enumerate(padded):
-            item = QTableWidgetItem(str(text))
-            item.setToolTip(str(text))
-            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-
-            if status_col is not None and col == status_col:
-                fg = self._STATUS_COLORS.get(text)
-                if fg:
-                    item.setForeground(QBrush(fg))
-
-            table.setItem(row, col, item)
-
-        # Подсветка фона для строк с ошибкой
-        if status_col is not None and padded[status_col] == "ERROR":
-            for col in range(col_count):
-                if (widget_item := table.item(row, col)):
-                    widget_item.setBackground(self._ERROR_BG)
-
-        self._filter_timer.start()
-        # Авто-показ блока Results при добавлении строки
-        if not self.tabs_frame.isVisible():
-            self._toggle_results_panel(True)
-
-    def add_result(
-        self,
-        server,
-        database,
-        country,
-        value,
-        status="OK",
-        message="",
-    ):
-        self._add_table_row(
-            ["Check", server, database, country, value, status, message],
-            status_col=5,
-        )
-
-    def clear_results(self):
-
-        self.table.clear()
-        self.table.setRowCount(0)
-        self.table.setColumnCount(7)
-        self.table.setHorizontalHeaderLabels([
-            "Source",
-            "Server",
-            "Database",
-            "Country",
-            "Value",
-            "Status",
-            "Message",
-        ])
-
-        header = self.table.horizontalHeader()
-
-        header.setSectionResizeMode(QHeaderView.Interactive)
-
-        header.setStretchLastSection(True)
-
-        fixed_widths = {
-            0: 64,
-            1: 190,
-            2: 160,
-            4: 180,
-        }
-
-        for index, width in fixed_widths.items():
-            header.resizeSection(index, width)
-
-        self._results_source = None
-
-        self._sync_filter_columns()
-        self._filter_results()
-        self._update_only_errors_visibility()
-
-    def _update_only_errors_visibility(self):
-
-        visible = self._results_source == "check"
-
-        self.chk_only_errors.setVisible(visible)
-
-        if not visible and self.chk_only_errors.isChecked():
-            self.chk_only_errors.setChecked(False)
-
-    def _show_table_menu(self, pos):
-
-        row = self.table.currentRow()
-
-        menu = QMenu(self)
-
-        copy_row = menu.addAction("Copy Row")
-        copy_server = menu.addAction("Copy Server")
-        copy_database = menu.addAction("Copy Database")
-
-        menu.addSeparator()
-
-        export_csv = menu.addAction("Export CSV...")
-
-        menu.addSeparator()
-
-        clear_action = menu.addAction("Clear results")
-
-        action = menu.exec(
-            self.table.viewport().mapToGlobal(pos)
-        )
-
-        if row < 0:
-            return
-
-        if action == copy_row:
-
-            self._copy_row(row)
-
-        elif action == copy_server:
-
-            index = self._column_index("Server")
-
-            if index is not None:
-
-                item = self.table.item(row, index)
-
-                QApplication.clipboard().setText(
-                    item.text() if item else ""
-                )
-
-        elif action == copy_database:
-
-            index = self._column_index("Database")
-
-            if index is not None:
-
-                item = self.table.item(row, index)
-
-                QApplication.clipboard().setText(
-                    item.text() if item else ""
-                )
-
-        elif action == export_csv:
-
-            self._export_csv()
-
-        elif action == clear_action:
-
-            self.clear_results()
-
-    def _table_double_click(self, item):
-
-        server_index = self._column_index("Server")
-        database_index = self._column_index("Database")
-
-        if server_index is None or database_index is None:
-            return
-
-        row = item.row()
-
-        server_item = self.table.item(row, server_index)
-        database_item = self.table.item(row, database_index)
-
-        if not server_item or not database_item:
-            return
-
-        server = server_item.text().strip()
-        database = database_item.text().strip()
-
-        if not server or not database:
-            return
-
-        self.cb_server.setCurrentText(server)
-        self.cb_database.setCurrentText(database)
-
-        self.append_log(
-            "SUCCESS",
-            f"Result applied to console: [{server}.{database}]",
-        )
-
-    def _copy_row(self, row: int):
-
-        values = []
-
-        for column in range(self.table.columnCount()):
-
-            item = self.table.item(row, column)
-
-            values.append(
-                item.text() if item else ""
-            )
-
-        QApplication.clipboard().setText(
-            "\t".join(values)
-        )
-
-        self.append_log(
-            "SUCCESS",
-            "Row copied to clipboard."
-        )
     # ----------------------------------------------------------
     # Log Methods
     # ----------------------------------------------------------
@@ -1880,20 +985,11 @@ class MainWindow(QWidget):
     # ----------------------------------------------------------
 
     def _append_query(self, text):
+        self.queries_panel.append_query(text)
 
-        stamp = datetime.now().strftime(
-            "%H:%M:%S"
-        )
+    def _apply_query_template(self, template: str):
 
-        self.query_log.appendPlainText(
-            f"[{stamp}] {text}"
-        )
-
-    def _apply_query_template(self):
-
-        sql_builder.set_custom_template(
-            self.query_editor.toPlainText()
-        )
+        sql_builder.set_custom_template(template)
 
         self.append_log(
             "SUCCESS",
@@ -1903,25 +999,6 @@ class MainWindow(QWidget):
     # ----------------------------------------------------------
     # SQL Console
     # ----------------------------------------------------------
-
-    def _sql_run(self):
-        """Выполнить весь скрипт из sql_editor (кнопка Run, Cmd+Shift+Enter)."""
-        self._run_sql(self.sql_editor.toPlainText())
-
-    def _sql_run_context(self):
-        """Cmd/Ctrl+Enter: выделенный фрагмент, иначе оператор под курсором."""
-        editor = self.sql_editor
-        text = editor.toPlainText()
-        cursor = editor.textCursor()
-
-        if cursor.hasSelection():
-            sql = cursor.selectedText()
-            # selectedText() возвращает символы U+2029 вместо переносов строк
-            sql = sql.replace("\u2029", "\n").strip()
-        else:
-            sql = statement_at(text, cursor.position()).strip()
-
-        self._run_sql(sql)
 
     def _run_sql(self, sql: str):
 
@@ -1940,7 +1017,7 @@ class MainWindow(QWidget):
             self.lbl_sql_status.setText("No targets selected.")
             return
 
-        if not self.chk_write.isChecked() and is_write_statement(sql):
+        if not self.panel.write_enabled() and is_write_statement(sql):
             answer = QMessageBox.question(
                 self,
                 "Write query",
@@ -1950,19 +1027,13 @@ class MainWindow(QWidget):
             if answer != QMessageBox.Yes:
                 return
 
-        self.table.clear()
-        self.table.setColumnCount(0)
-        self.table.setRowCount(0)
-        self.table.setSortingEnabled(False)
-
-        self._results_source = "sql"
-
-        self._update_only_errors_visibility()
+        self.table.reset()
+        self.table.results_source = "sql"
 
         self.lbl_sql_status.setText(
             f"Running on {len(targets)} target(s)..."
         )
-        self._sql_busy(True)
+        self.panel.set_busy(True)
 
         if (
             len(targets) == 1
@@ -1987,28 +1058,25 @@ class MainWindow(QWidget):
 
     def _sql_build_targets(self):
 
-        if self.chk_all_servers.isChecked():
+        if self.panel.all_servers_checked():
 
-            hosts = [
-                self._server_name(item)
-                for item in self.server_list.selectedItems()
-                if self._is_server_item(item)
-            ]
+            hosts = self.servers_tree.selected_servers()
 
             hosts = [host for host in hosts if host]
 
         else:
 
-            host = self.cb_server.currentText().strip()
+            host = self.panel.current_host()
             hosts = [host] if host else []
 
         if not hosts:
             return []
 
-        if self.chk_all_databases.isChecked():
-            database = ALL_DATABASES
-        else:
-            database = self.cb_database.currentText().strip() or None
+        database = (
+            ALL_DATABASES
+            if self.panel.all_databases_checked()
+            else self.panel.current_database() or None
+        )
 
         return [
             (host, database) for host in hosts
@@ -2018,13 +1086,11 @@ class MainWindow(QWidget):
         self._sql_refresh_databases()
 
     def _sql_scope_changed(self, checked):
-
-        self.cb_server.setEnabled(
-            not self.chk_all_servers.isChecked()
+        self.panel.cb_server.setEnabled(
+            not self.panel.all_servers_checked()
         )
-
-        self.cb_database.setEnabled(
-            not self.chk_all_databases.isChecked()
+        self.panel.cb_database.setEnabled(
+            not self.panel.all_databases_checked()
         )
 
     def _sql_stop(self):
@@ -2032,20 +1098,26 @@ class MainWindow(QWidget):
         self.query_worker.stop()
         self.lbl_sql_status.setText("Stopping...")
 
+        # KILL активного запроса в фоне, чтобы не блокировать GUI.
+        threading.Thread(
+            target=self.query_worker.kill_active,
+            daemon=True,
+        ).start()
+
     def _sql_refresh_databases(self):
 
         if self.query_thread.isRunning():
             return
 
-        host = self.cb_server.currentText().strip()
+        host = self.panel.current_host()
 
         if not host:
             self._sql_error("No server selected.")
             return
 
         self.lbl_sql_status.setText("Loading databases...")
-        self._sql_busy(True)
-        self.btn_sql_stop.setEnabled(False)
+        self.panel.set_busy(True)
+        self.panel.set_stop_enabled(False)
 
         self.query_worker.set_databases_request(host)
 
@@ -2053,35 +1125,16 @@ class MainWindow(QWidget):
 
     def _sql_clear(self):
 
-        self.sql_editor.clear()
-        self.clear_results()
+        self.table.clear_results()
         self.lbl_sql_status.setText("Ready")
-
-    def _sql_busy(self, busy):
-
-        self.btn_sql_run.setEnabled(not busy)
-        self.btn_sql_refresh_db.setEnabled(not busy)
-        self.btn_sql_stop.setEnabled(busy)
-        self.chk_all_servers.setEnabled(not busy)
-        self.chk_all_databases.setEnabled(not busy)
-
-        self.cb_server.setEnabled(
-            not busy and not self.chk_all_servers.isChecked()
-        )
-
-        self.cb_database.setEnabled(
-            not busy and not self.chk_all_databases.isChecked()
-        )
 
     def _sql_finished(self):
 
         self.table.setSortingEnabled(True)
-        self._sync_filter_columns()
-        self._filter_results()
-        self._sql_busy(False)
-        # Авто-показ блока Results по завершении запроса
-        if not self.tabs_frame.isVisible():
-            self._toggle_results_panel(True)
+        self.table.sync_filter_columns()
+        self.table.apply_filters()
+        self.panel.set_busy(False)
+        self._ensure_results_visible()
 
     def _sql_target_started(self, index, total, host, database):
 
@@ -2098,7 +1151,7 @@ class MainWindow(QWidget):
         message,
     ):
 
-        self._fill_sql_result(
+        self.table.fill_sql_result(
             host,
             database,
             rows,
@@ -2117,7 +1170,7 @@ class MainWindow(QWidget):
             f"SQL [{host}.{database}]: {message}",
         )
 
-        self._fill_sql_result(
+        self.table.fill_sql_result(
             host,
             database,
             [],
@@ -2134,52 +1187,14 @@ class MainWindow(QWidget):
         self.lbl_sql_status.setText(
             f"Stopped ({done} of {total})"
         )
-        self._sql_busy(False)
-
-    def _fill_sql_result(
-        self,
-        host,
-        database,
-        rows,
-        columns,
-        message,
-    ):
-
-        table = self.table
-
-        if table.columnCount() == 0:
-            labels = (
-                ["Source", "Server", "Database"] + columns
-                if columns
-                else ["Source", "Server", "Database", "Result"]
-            )
-
-            table.setColumnCount(len(labels))
-            table.setHorizontalHeaderLabels(labels)
-
-            header = table.horizontalHeader()
-            header.setSectionResizeMode(QHeaderView.Interactive)
-            header.setStretchLastSection(True)
-
-            for index, width in ((0, 64), (1, 190), (2, 160)):
-                if index < len(labels):
-                    header.resizeSection(index, width)
-
-            self._sync_filter_columns()
-
-        if not columns:
-            rows = [[message]]
-
-        for row in rows:
-            display = ["SQL", host, database] + row
-            self._add_table_row(display[:table.columnCount()])
+        self.panel.set_busy(False)
 
     def _show_query_result(self, rows, columns, message):
 
-        host = self.cb_server.currentText().strip()
-        database = self.cb_database.currentText().strip()
+        host = self.panel.current_host()
+        database = self.panel.current_database()
 
-        self._fill_sql_result(
+        self.table.fill_sql_result(
             host,
             database,
             rows,
@@ -2188,12 +1203,12 @@ class MainWindow(QWidget):
         )
 
         self.lbl_sql_status.setText(message)
-        self._sql_busy(False)
+        self.panel.set_busy(False)
 
     def _sql_error(self, message):
 
         self.lbl_sql_status.setText(f"Error: {message}")
-        self._sql_busy(False)
+        self.panel.set_busy(False)
 
         self.append_log(
             "ERROR",
@@ -2202,26 +1217,12 @@ class MainWindow(QWidget):
 
     def _show_databases(self, names):
 
-        current = self.cb_database.currentText()
-
-        self.cb_database.blockSignals(True)
-
-        self.cb_database.clear()
-        self.cb_database.addItems(names)
-
-        # Восстанавливаем выбранную БД только если она есть на новом сервере,
-        # иначе очищаем выбор, чтобы не оставалась несуществующая БД.
-        if current and current in names:
-            self.cb_database.setCurrentText(current)
-        else:
-            self.cb_database.setCurrentText("")
-
-        self.cb_database.blockSignals(False)
+        self.panel.set_databases(names)
 
         self.lbl_sql_status.setText(
             f"{len(names)} database(s) loaded."
         )
-        self._sql_busy(False)
+        self.panel.set_busy(False)
 
     # ----------------------------------------------------------
     # Database search
@@ -2260,15 +1261,8 @@ class MainWindow(QWidget):
 
         # Поиск показывает результат в таблице Results с колонками
         # Server и Database.
-        self.table.clear()
-        self.table.setRowCount(0)
-        self.table.setColumnCount(0)
-
-        self._results_source = "search"
-
-        self._update_only_errors_visibility()
-
-        self.table.setSortingEnabled(False)
+        self.table.reset()
+        self.table.results_source = "search"
 
         self.progress.setValue(0)
 
@@ -2311,9 +1305,9 @@ class MainWindow(QWidget):
 
         self.table.setSortingEnabled(True)
 
-        self._sync_filter_columns()
+        self.table.sync_filter_columns()
 
-        self._filter_results()
+        self.table.apply_filters()
 
         self._search_busy(False)
 
@@ -2330,7 +1324,7 @@ class MainWindow(QWidget):
 
         # Сбрасываем кэшированные размеры БД/таблиц,
         # чтобы при следующем раскрытии узлов были свежие данные.
-        self._reset_server_sizes()
+        self.servers_tree.reset_sizes()
 
     def _search_progress(self, current, total):
         self._update_progress(current, total)
@@ -2340,7 +1334,7 @@ class MainWindow(QWidget):
 
         self._search_found += 1
 
-        self._append_search_result(server, database)
+        self.table.add_search_result(server, database)
 
     def _search_error(self, server, message):
 
@@ -2349,32 +1343,50 @@ class MainWindow(QWidget):
             f"Search [{server}]: {message}",
         )
 
-    def _append_search_result(self, server, database):
-
-        table = self.table
-
-        if table.columnCount() == 0:
-            labels = ["Server", "Database"]
-            table.setColumnCount(len(labels))
-            table.setHorizontalHeaderLabels(labels)
-
-            header = table.horizontalHeader()
-            header.setSectionResizeMode(QHeaderView.Interactive)
-            header.setStretchLastSection(True)
-
-            for index, width in ((0, 190), (1, 160)):
-                if index < len(labels):
-                    header.resizeSection(index, width)
-
-            self._sync_filter_columns()
-
-        self._add_table_row([server, database])
-
     def _search_busy(self, busy):
 
         self.btn_search.setEnabled(not busy)
         self.btn_search_stop.setEnabled(busy)
         self.ed_search_mask.setEnabled(not busy)
+
+    def _run_table_select(self, server: str, database: str, table: str):
+        """Выполняет SELECT * FROM `db`.`table` в фоновом потоке."""
+        # Если поток занят (например, загрузкой списка БД) — останавливаем его,
+        # чтобы SELECT гарантированно выполнился.
+        if self.query_thread.isRunning():
+            self.query_worker.stop()
+            threading.Thread(
+                target=self.query_worker.kill_active,
+                daemon=True,
+            ).start()
+            self.query_thread.wait(5000)
+            if self.query_thread.isRunning():
+                self.query_thread.terminate()
+                self.query_thread.wait()
+
+        sql = f"SELECT * FROM `{database}`.`{table}` LIMIT 1000"
+
+        self.table.reset()
+        self.table.results_source = "sql"
+
+        self.lbl_sql_status.setText(
+            f"Running {server}.{database}.{table}..."
+        )
+        self.panel.set_busy(True)
+
+        self._ensure_results_visible()
+
+        self.query_worker.set_multi_request(
+            [(server, database)],
+            sql,
+            1000,
+        )
+        self.query_thread.start()
+
+        self.append_log(
+            "INFO",
+            f"SELECT * FROM `{database}`.`{table}` @ {server}",
+        )
 
     def _save_log(self):
 
@@ -2429,7 +1441,7 @@ class MainWindow(QWidget):
     def closeEvent(self, event):
         self.shutdown()
         event.accept()
-    
+
     def _update_elapsed(self):
 
         if self._started_at is None:
@@ -2445,204 +1457,4 @@ class MainWindow(QWidget):
 
         self.lbl_elapsed_value.setText(
             f"{h:02}:{m:02}:{s:02}"
-        )
-
-    def _column_index(self, name):
-
-        for column in range(self.table.columnCount()):
-
-            item = self.table.horizontalHeaderItem(column)
-
-            if item is not None and item.text() == name:
-                return column
-
-        return None
-
-    def _sync_filter_columns(self):
-        """Пересоздаёт колоночные фильтры по текущим заголовкам таблицы.
-
-        Вызывается при смене набора колонок (Check / SQL / Search), чтобы
-        строка FilterHeaderRow содержала по одному полю на каждую колонку.
-        Старые поля намеренно пересоздаются: после смены типа результата
-        прежние значения могли бы примениться к другой колонке.
-        """
-        headers = [
-            self.table.horizontalHeaderItem(column).text()
-            for column in range(self.table.columnCount())
-            if self.table.horizontalHeaderItem(column) is not None
-        ]
-
-        self.filter_header.rebuild(headers)
-
-    def _on_result_search_changed(self):
-        """Debounce-обработчик изменения текста в поле фильтра результатов.
-
-        Вызывается при каждом изменении текста в поле result_search или
-        в любом из колоночных полей FilterHeaderRow (см. подключение
-        сигналов в _build_ui). Сам фильтр не запускается мгновенно:
-        вместо этого перезапускается одноразовый таймер
-        self._filter_timer (40 мс), чтобы не перерисовывать таблицу на
-        каждый нажатый символ. По истечении таймера срабатывает
-        self._filter_results().
-        """
-        self._filter_timer.start()
-
-    def _filter_results(self):
-        """Применяет фильтры Results.
-
-        Общий поиск и поколоночный поиск связаны через AND: если заполнены
-        оба типа фильтров, строка должна пройти оба условия. Несколько
-        заполненных полей колонок объединяются через OR, поэтому достаточно
-        совпадения хотя бы в одной из указанных колонок.
-
-        Чекбокс "Только ошибки" применяется последним как дополнительный
-        AND-фильтр по колонке Status.
-        """
-        # Нормализуем ввод один раз: фильтрация является регистронезависимой,
-        # поэтому и запрос, и значения таблицы сравниваются в lower-case.
-        search = self.result_search.text().strip().lower()
-
-        # Этот флаг не является частью OR-набора. Он накладывается после
-        # поиска и тем самым работает как дополнительное условие AND.
-        only_errors = self.chk_only_errors.isChecked()
-
-        status_index = self._column_index("Status")
-
-        # Колоночные фильтры (по одной колонке, contains). Пустые поля
-        # исключаются из поколоночного OR-набора внутри _matches_columns().
-        column_filters = self.filter_header.get_filters()
-
-        table = self.table
-
-        sorting = table.isSortingEnabled()
-
-        table.setSortingEnabled(False)
-
-        table.setUpdatesEnabled(False)
-
-        def _row_texts(row):
-            """Возвращает тексты всех колонок строки (нижний регистр).
-
-            Пустые ячейки превращаются в пустую строку, чтобы фильтр не
-            зависел от наличия QTableWidgetItem в конкретной ячейке.
-            """
-            texts = []
-            for column in range(table.columnCount()):
-                item = table.item(row, column)
-                texts.append((item.text() if item else "").lower())
-            return texts
-
-        def _matches_global(row_texts):
-            """True, если сквозной фильтр совпал хотя бы в одной колонке.
-
-            Пустой сквозной фильтр не даёт совпадения — он активен только
-            когда в поле result_search есть текст. Это важно для OR-логики:
-            пустая строка технически содержится в любом тексте, но не должна
-            делать все строки видимыми вместо реально заданных фильтров.
-            """
-            if not search:
-                return False
-            return any(search in text for text in row_texts)
-
-        def _matches_columns(row_texts):
-            """True, если совпал хотя бы один фильтр из колоночной группы."""
-            # Поля колонок являются независимыми альтернативами внутри
-            # своей группы: фильтр по Server не обязан совпадать одновременно
-            # с фильтром Status. Связь этой группы с общим поиском задаётся
-            # отдельно выше через AND.
-            for column, col_filter in enumerate(column_filters):
-                if col_filter and column < len(row_texts):
-                    if col_filter in row_texts[column]:
-                        return True
-            return False
-
-        try:
-
-            for row in range(table.rowCount()):
-
-                row_texts = _row_texts(row)
-
-                has_global_filter = bool(search)
-                has_column_filters = any(column_filters)
-
-                # Общий фильтр и поколоночный блок — независимые группы,
-                # поэтому при заполнении обеих групп используется AND.
-                # Внутри поколоночного блока сохраняется OR между колонками.
-                visible = (
-                    (not has_global_filter or _matches_global(row_texts))
-                    and (
-                        not has_column_filters
-                        or _matches_columns(row_texts)
-                    )
-                )
-
-                # AND: только ошибки
-                if visible and only_errors and status_index is not None:
-
-                    item = table.item(row, status_index)
-
-                    status_text = item.text() if item else ""
-
-                    visible = status_text == "ERROR"
-
-                table.setRowHidden(
-                    row,
-                    not visible,
-                )
-
-        finally:
-
-            table.setUpdatesEnabled(True)
-
-            table.setSortingEnabled(sorting)
-
-        table.viewport().update()
-
-    def _export_csv(self):
-
-        filename, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export CSV",
-            "results.csv",
-            "CSV files (*.csv);;All files (*)",
-        )
-
-        if not filename:
-            return
-
-        with open(
-            filename,
-            "w",
-            newline="",
-            encoding="utf-8-sig",
-        ) as f:
-            writer = csv.writer(f)
-            headers = []
-
-            for column in range(self.table.columnCount()):
-                headers.append(
-                    self.table.horizontalHeaderItem(column).text()
-                )
-
-            writer.writerow(headers)
-
-            for row in range(self.table.rowCount()):
-                if self.table.isRowHidden(row):
-                    continue
-
-                values = []
-
-                for column in range(self.table.columnCount()):
-
-                    item = self.table.item(row, column)
-
-                    values.append(
-                        item.text() if item else ""
-                    )
-
-                writer.writerow(values)
-
-        self.append_log(
-            "SUCCESS",
-            f"Results exported to {filename}",
         )

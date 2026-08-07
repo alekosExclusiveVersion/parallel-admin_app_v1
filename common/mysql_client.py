@@ -211,14 +211,18 @@ class MySQLClient:
             for db in row.values()
         ]
 
-    def has_cfg_settings(self, host: str, database: str) -> bool:
-        rows = self.query(
-            host,
-            "SHOW TABLES LIKE %s",
-            database,
-            (config.advanced.settings_table,),
+    def has_cfg_settings_conn(self, conn, database: str) -> bool:
+        rows = self.execute_on_connection(
+            conn,
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = %s AND table_name = %s LIMIT 1",
+            (database, config.advanced.settings_table),
         )
         return bool(rows)
+
+    def has_cfg_settings(self, host: str, database: str) -> bool:
+        with self.connect(host, database) as conn:
+            return self.has_cfg_settings_conn(conn, database)
 
     def get_settings(self, host: str, database: str) -> dict[str, str]:
         """Возвращает country/target настройки БД по открытому соединению."""
@@ -228,6 +232,12 @@ class MySQLClient:
     # ----------------------------------------------------------
     # Размеры БД и таблиц
     # ----------------------------------------------------------
+
+    def kill_connection(self, host: str, connection_id: int) -> None:
+        """Прерывает запрос на сервере через KILL (отдельным соединением)."""
+        with self.connect(host) as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"KILL {int(connection_id)}")
 
     def database_sizes(self, host: str) -> dict[str, int]:
         """Суммарный размер (в байтах) по каждой БД на сервере.

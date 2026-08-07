@@ -39,6 +39,8 @@ class QueryWorker(QObject):
         self._mode = "query"
         self._targets = []
         self._stop = False
+        self._active_host = ""
+        self._active_id = None
 
     def set_request(self, host, database, sql, row_limit=1000):
         self._host = host
@@ -47,6 +49,8 @@ class QueryWorker(QObject):
         self._row_limit = row_limit
         self._mode = "query"
         self._stop = False
+        self._active_host = ""
+        self._active_id = None
 
     def set_databases_request(self, host):
         self._host = host
@@ -54,6 +58,8 @@ class QueryWorker(QObject):
         self._sql = ""
         self._mode = "databases"
         self._stop = False
+        self._active_host = ""
+        self._active_id = None
 
     def set_multi_request(self, targets, sql, row_limit=1000):
         self._targets = list(targets)
@@ -61,12 +67,31 @@ class QueryWorker(QObject):
         self._row_limit = row_limit
         self._mode = "multi"
         self._stop = False
+        self._active_host = ""
+        self._active_id = None
 
     def stop(self):
         self._stop = True
 
-    @staticmethod
+    def kill_active(self):
+        """Прерывает выполняющийся запрос через KILL <connection_id>.
+
+        Запускать в фоновом потоке: открывает отдельное соединение,
+        поэтому сам по себе может блокироваться.
+        """
+        host = self._active_host
+        conn_id = self._active_id
+
+        if not host or conn_id is None:
+            return
+
+        try:
+            mysql.kill_connection(host, conn_id)
+        except Exception:
+            pass
+
     def _execute_sql(
+        self,
         host: str,
         database: str | None,
         sql: str,
@@ -76,33 +101,40 @@ class QueryWorker(QObject):
         started_at = time.perf_counter()
 
         with mysql.connect(host, database) as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql)
+            self._active_host = host
+            self._active_id = conn.connection_id
 
-                if cur.description is not None:
-                    columns = [d[0] for d in cur.description]
-                    rows = list(cur.fetchmany(row_limit + 1))
-                    truncated = len(rows) > row_limit
-                    rows = rows[:row_limit]
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(sql)
 
-                    rows = [
-                        ["Null" if value is None else str(value)
-                         for value in row.values()]
-                        for row in rows
-                    ]
+                    if cur.description is not None:
+                        columns = [d[0] for d in cur.description]
+                        rows = list(cur.fetchmany(row_limit + 1))
+                        truncated = len(rows) > row_limit
+                        rows = rows[:row_limit]
 
-                    total = f">{row_limit}" if truncated else str(len(rows))
-                    message = (
-                        f"{len(rows)} row(s) of {total} "
-                        f"({time.perf_counter() - started_at:.2f} s)"
-                    )
-                else:
-                    columns = []
-                    rows = []
-                    message = (
-                        f"{cur.rowcount} row(s) affected "
-                        f"({time.perf_counter() - started_at:.2f} s)"
-                    )
+                        rows = [
+                            ["Null" if value is None else str(value)
+                             for value in row.values()]
+                            for row in rows
+                        ]
+
+                        total = f">{row_limit}" if truncated else str(len(rows))
+                        message = (
+                            f"{len(rows)} row(s) of {total} "
+                            f"({time.perf_counter() - started_at:.2f} s)"
+                        )
+                    else:
+                        columns = []
+                        rows = []
+                        message = (
+                            f"{cur.rowcount} row(s) affected "
+                            f"({time.perf_counter() - started_at:.2f} s)"
+                        )
+            finally:
+                self._active_host = ""
+                self._active_id = None
 
         return rows, columns, message
 
