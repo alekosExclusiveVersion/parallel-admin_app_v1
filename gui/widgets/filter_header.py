@@ -1,196 +1,139 @@
 """
 gui/widgets/filter_header.py
 
-Строка колоночных фильтров, размещаемая под заголовками таблицы Results.
+Встроенная строка поколоночных фильтров для Results.
 
-Каждой колонке соответствует своё поле QLineEdit (поиск contains по этой
-колонке). Поля синхронизируются по ширине и по горизонтальному скроллу
-с таблицей, к которой привязан виджет, поэтому при прокрутке/изменении
-ширины колонок поля не «разъезжаются».
+Поля являются дочерними элементами таблицы, располагаются непосредственно
+под QHeaderView и используют координаты самого заголовка. Поэтому вертикальная
+прокрутка строк их не двигает, а горизонтальная прокрутка перемещает каждое
+поле вместе с соответствующей колонкой.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (
-    QHBoxLayout,
-    QLineEdit,
-    QScrollArea,
-    QWidget,
-)
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtWidgets import QLineEdit, QTableWidget, QWidget
 
 
 class FilterHeaderRow(QWidget):
-    """Ряд полей фильтра, по одному на колонку таблицы.
+    """Overlay-строка фильтров, закреплённая под шапкой таблицы."""
 
-    Содержит QScrollArea, внутри которого горизонтальная строка QLineEdit.
-    Прокрутка и ширина полей синхронизируются с QHeaderView таблицы,
-    переданной в :meth:`bind`.
-    """
-
-    #: Срабатывает при изменении текста в любом из колоночных полей.
     filterChanged = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._table = None
+        self._table: QTableWidget | None = None
         self._edits: list[QLineEdit] = []
-        self._row_height = 28  # высота строки фильтра
-
+        self._row_height = 28
         self.setFixedHeight(self._row_height)
-
-        outer = QHBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-
-        self._scroll = QScrollArea()
-        self._scroll.setWidgetResizable(False)
-        self._scroll.setFixedHeight(self._row_height)
-        self._scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarAlwaysOff
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet(
+            "FilterHeaderRow { background: palette(base); }"
         )
-        self._scroll.setVerticalScrollBarPolicy(
-            Qt.ScrollBarAlwaysOff
-        )
-        self._scroll.setFrameShape(QScrollArea.NoFrame)
-        self._scroll.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self._scroll.setStyleSheet(
-            "QScrollArea{background:transparent;border:none;}"
-        )
-        outer.addWidget(self._scroll)
+        self.hide()
 
-        self._content = QWidget()
-        self._content.setFixedHeight(self._row_height)
-        self._content.setStyleSheet(
-            "background:transparent;"
-        )
-        self._content_layout = QHBoxLayout(self._content)
-        self._content_layout.setContentsMargins(0, 0, 0, 0)
-        self._content_layout.setSpacing(0)
-        self._scroll.setWidget(self._content)
-
-    # --------------------------------------------------------------
-    # Привязка к таблице
-    # --------------------------------------------------------------
-
-    def bind(self, table) -> None:
-        """Привязывает виджет к таблице для синхронизации ширины/скролла.
-
-        table — QTableWidget, над которым размещена строка фильтров.
-        """
+    def bind(self, table: QTableWidget) -> None:
+        """Встраивает overlay в таблицу и подключает геометрические сигналы."""
         self._table = table
+        self.setParent(table)
+        self.raise_()
 
-        # QHeaderView не является обычным дочерним widget таблицы, поэтому
-        # поля нельзя надёжно разместить «внутри» заголовка через layout.
-        # Вместо этого строка фильтров живёт рядом с таблицей и получает
-        # изменения геометрии через сигналы самого QHeaderView.
         header = table.horizontalHeader()
-        header.sectionResized.connect(self._sync_layout)
-        header.sectionMoved.connect(self._sync_layout)
+        header.sectionResized.connect(self._schedule_sync)
+        header.sectionMoved.connect(self._schedule_sync)
+        header.geometriesChanged.connect(self._schedule_sync)
         table.horizontalScrollBar().valueChanged.connect(
-            self._sync_scroll
+            self._schedule_sync
         )
-        table.horizontalScrollBar().rangeChanged.connect(
-            self._sync_scroll
+        table.verticalScrollBar().valueChanged.connect(
+            self._schedule_sync
         )
+        table.installEventFilter(self)
+        table.viewport().installEventFilter(self)
+        header.installEventFilter(self)
 
-        self._sync_layout()
-
-    # --------------------------------------------------------------
-    # Управление колонками
-    # --------------------------------------------------------------
+        # Резервируем место под фильтры между шапкой и данными. Overlay
+        # остаётся дочерним таблицы, поэтому vertical scrollbar его не двигает.
+        table.setViewportMargins(0, self._row_height, 0, 0)
+        self._sync_geometry()
 
     def rebuild(self, columns: list[str]) -> None:
-        """Пересоздаёт поля фильтров по списку заголовков колонок.
-
-        Текущие значения полей не сохраняются — набор колонок меняется
-        при смене результата (Check / SQL / Search), поэтому фильтры
-        сбрасываются.
-
-        Если список колонок пуст, виджет скрывается.
-        """
-        if not columns:
-            # При пустом Results фильтры не должны занимать место между
-            # общим поиском и таблицей — это устраняет пустую область.
-            self.hide()
-            return
-
-        self.show()
-
-        # Отключаем сигналы на время пересоздания
+        """Создаёт по одному полю фильтра для каждой логической колонки."""
         for edit in self._edits:
-            edit.blockSignals(True)
-
-        # Удаляем старые поля
-        while self._content_layout.count():
-            item = self._content_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-
+            edit.deleteLater()
         self._edits = []
 
+        if not columns:
+            self.hide()
+            self._sync_geometry()
+            return
+
         for column in columns:
-            edit = QLineEdit()
+            edit = QLineEdit(self)
             edit.setFixedHeight(self._row_height)
             edit.setPlaceholderText("…")
             edit.setClearButtonEnabled(True)
             edit.setToolTip(f"Фильтр по колонке «{column}»")
             edit.setMinimumWidth(40)
             edit.textChanged.connect(self._on_text_changed)
-            self._content_layout.addWidget(edit)
             self._edits.append(edit)
 
-        self._sync_layout()
+        self.show()
+        self.raise_()
+        self._sync_geometry()
 
     def get_filters(self) -> list[str]:
-        """Возвращает текст каждого поля (в порядке колонок)."""
+        """Возвращает фильтры в логическом порядке колонок."""
         return [edit.text().strip().lower() for edit in self._edits]
 
     def clear_filters(self) -> None:
-        """Очищает все поля фильтров."""
+        """Очищает все поколоночные фильтры."""
         for edit in self._edits:
             edit.blockSignals(True)
             edit.clear()
             edit.blockSignals(False)
-        self._sync_layout()
-
-    # --------------------------------------------------------------
-    # Слоты
-    # --------------------------------------------------------------
+        self._sync_geometry()
 
     def _on_text_changed(self) -> None:
         self.filterChanged.emit()
 
-    def _sync_layout(self) -> None:
-        """Выравнивает ширину полей по ширине колонок таблицы.
+    def _schedule_sync(self, *args) -> None:
+        self._sync_geometry()
 
-        Ширины берутся у QHeaderView, а не вычисляются по тексту заголовков:
-        это сохраняет выравнивание после ручного изменения размера колонок.
-        """
-        if self._table is None:
+    def _sync_geometry(self) -> None:
+        """Привязывает поля к текущей геометрии секций QHeaderView."""
+        table = self._table
+        if table is None:
             return
 
-        header = self._table.horizontalHeader()
-        scroll = self._scroll
+        header = table.horizontalHeader()
+        header_viewport = header.viewport()
+        header_origin = header_viewport.mapTo(table, header_viewport.rect().topLeft())
+        row_origin = header_origin.y() + header_viewport.height()
+        self.setGeometry(
+            0,
+            row_origin,
+            table.width(),
+            self._row_height,
+        )
 
-        # Ширина полей = ширины колонок, сдвиг = позиция скролла таблицы.
-        # Общая ширина контента нужна для корректного соответствия полей
-        # колонкам, включая случаи, когда таблица шире видимой области.
-        total = 0
-        for index, edit in enumerate(self._edits):
-            width = header.sectionSize(index) if index < header.count() else 80
-            edit.setFixedWidth(width)
-            total += width
+        visible_left = 0
+        visible_right = table.width()
+        for logical_index, edit in enumerate(self._edits):
+            if logical_index >= header.count():
+                edit.hide()
+                continue
 
-        self._content.setFixedWidth(total)
+            x = header_origin.x() + header.sectionViewportPosition(logical_index)
+            width = header.sectionSize(logical_index)
+            edit.setGeometry(x, 0, width, self._row_height)
+            edit.setVisible(
+                width > 0 and x + width > visible_left and x < visible_right
+            )
 
-        offset = self._table.horizontalScrollBar().value()
-        scroll.horizontalScrollBar().setValue(offset)
+        self.raise_()
 
-    def _sync_scroll(self) -> None:
-        """Синхронизирует горизонтальную прокрутку с таблицей."""
-        if self._table is None:
-            return
-        offset = self._table.horizontalScrollBar().value()
-        self._scroll.horizontalScrollBar().setValue(offset)
+    def eventFilter(self, watched: QWidget, event: QEvent) -> bool:
+        if event.type() in (QEvent.Resize, QEvent.LayoutRequest, QEvent.Move):
+            self._sync_geometry()
+        return super().eventFilter(watched, event)
