@@ -69,7 +69,7 @@ class ServerDialog(QDialog):
         self._spec = spec
 
         self.setWindowTitle(
-            "Edit server" if spec is not None else "Add server"
+            "Изменить сервер" if spec is not None else "Добавить сервер"
         )
         self.setMinimumWidth(380)
         self._test_host = None
@@ -89,7 +89,7 @@ class ServerDialog(QDialog):
         layout = QVBoxLayout(self)
 
         title = QLabel(
-            "Edit server" if self._spec is not None else "Add server"
+            "Изменить сервер" if self._spec is not None else "Добавить сервер"
         )
         title.setObjectName("DialogTitle")
         layout.addWidget(title)
@@ -97,38 +97,39 @@ class ServerDialog(QDialog):
         form = QFormLayout()
 
         self.ed_name = QLineEdit()
-        self.ed_name.setPlaceholderText("optional")
-        form.addRow("Name:", self.ed_name)
+        self.ed_name.setPlaceholderText("необязательно")
+        form.addRow("Имя:", self.ed_name)
 
         self.ed_host = QLineEdit()
-        self.ed_host.setPlaceholderText("host.example.com")
-        form.addRow("Host:", self.ed_host)
+        self.ed_host.setPlaceholderText("напр. db.example.com")
+        form.addRow("Хост:", self.ed_host)
 
         self.cb_engine = QComboBox()
         self.cb_engine.addItem("MySQL", ENGINE_MYSQL)
         self.cb_engine.addItem("MSSQL", ENGINE_MSSQL)
-        form.addRow("Engine:", self.cb_engine)
+        form.addRow("Движок:", self.cb_engine)
 
         self.sp_port = QSpinBox()
         self.sp_port.setRange(1, 65535)
-        form.addRow("Port:", self.sp_port)
+        form.addRow("Порт:", self.sp_port)
 
         self.ed_user = QLineEdit()
-        form.addRow("User:", self.ed_user)
+        form.addRow("Логин:", self.ed_user)
 
         self.ed_password = QLineEdit()
         self.ed_password.setEchoMode(QLineEdit.Password)
 
-        self.chk_show_password = QCheckBox("Show")
+        self.chk_show_password = QCheckBox("Показать")
         password_row = QHBoxLayout()
         password_row.addWidget(self.ed_password, 1)
         password_row.addWidget(self.chk_show_password)
-        form.addRow("Password:", password_row)
+        form.addRow("Пароль:", password_row)
 
         layout.addLayout(form)
 
         hint = QLabel(
-            "Empty password uses the global default from config.ini."
+            "Пустой пароль — используется глобальный по умолчанию "
+            "из config.ini."
         )
         hint.setStyleSheet(
             "border:none;background:transparent;color:#64748b;"
@@ -137,14 +138,14 @@ class ServerDialog(QDialog):
 
         buttons = QHBoxLayout()
 
-        self.btn_test = QPushButton("Test Connection")
+        self.btn_test = QPushButton("Проверить соединение")
         buttons.addWidget(self.btn_test)
         buttons.addStretch()
 
-        self.btn_cancel = QPushButton("Cancel")
+        self.btn_cancel = QPushButton("Отмена")
         buttons.addWidget(self.btn_cancel)
 
-        self.btn_save = QPushButton("Save")
+        self.btn_save = QPushButton("Сохранить")
         self.btn_save.setObjectName("btn_primary")
         buttons.addWidget(self.btn_save)
 
@@ -191,14 +192,14 @@ class ServerDialog(QDialog):
         host = self.ed_host.text().strip()
 
         if not host:
-            self._show_error("Enter the server host.")
+            self._show_error("Укажите хост сервера.")
             return
 
         if self._test_host is not None and self._test_host.thread.isRunning():
             return
 
         self.btn_test.setEnabled(False)
-        self.btn_test.setText("Testing...")
+        self.btn_test.setText("Проверка...")
 
         host = WorkerHost(_TestWorker, self)
         self._test_host = host
@@ -215,7 +216,7 @@ class ServerDialog(QDialog):
 
     def _on_test_finished(self, ok: bool, message: str) -> None:
         self.btn_test.setEnabled(True)
-        self.btn_test.setText("Test Connection")
+        self.btn_test.setText("Проверить соединение")
         self._test_host = None
 
         if ok:

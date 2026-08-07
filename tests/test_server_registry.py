@@ -112,6 +112,13 @@ class TestServerRegistryPersistence(ServerRegistryTestBase):
             "Prod (h1)",
         )
 
+    def test_ui_label_hides_host(self):
+        self.assertEqual(ServerSpec(host="h1").ui_label(), "h1")
+        self.assertEqual(
+            ServerSpec(host="h1", name="Prod").ui_label(),
+            "Prod",
+        )
+
 
 class TestServerRegistryMigration(ServerRegistryTestBase):
 

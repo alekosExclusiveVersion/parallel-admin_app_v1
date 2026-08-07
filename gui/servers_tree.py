@@ -162,6 +162,9 @@ class ServersTree(QTreeWidget):
             item = QTreeWidgetItem([display])
             item.setData(0, Qt.UserRole, server)
             item.setData(0, _DISPLAY_ROLE, display)
+            # Host скрыт из списка, но доступен подсказкой при наведении.
+            if server != display:
+                item.setToolTip(0, server)
             item.setIcon(0, icon("dns", 16, "#2563eb"))
             # Заглушка-ребёнок, чтобы у сервера появился маркер раскрытия
             QTreeWidgetItem(item, [_PLACEHOLDER])
@@ -390,15 +393,16 @@ class ServersTree(QTreeWidget):
 
         item = self.itemAt(pos)
 
-        action_add = menu.addAction(icon("add", 16, "#2563eb"), "Add server")
+        action_add = menu.addAction(icon("add", 16, "#2563eb"), "Добавить сервер")
         action_add.triggered.connect(self.addServerRequested)
 
         if item is not None and self.is_server_item(item):
             server = self.server_name(item)
+            label = self.display_name(item)
 
             action_edit = menu.addAction(
                 icon("edit", 16, "#475569"),
-                f"Edit '{server}'",
+                f"Изменить «{label}»",
             )
             action_edit.triggered.connect(
                 lambda: self.editServerRequested.emit(server)
@@ -406,7 +410,7 @@ class ServersTree(QTreeWidget):
 
             action_remove = menu.addAction(
                 icon("delete_outline", 16, "#dc2626"),
-                f"Remove '{server}'",
+                f"Удалить «{label}»",
             )
             action_remove.triggered.connect(
                 lambda: self.removeServerRequested.emit(server)

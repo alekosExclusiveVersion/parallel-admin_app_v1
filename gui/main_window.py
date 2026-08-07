@@ -274,14 +274,16 @@ class MainWindow(QWidget):
 
         hosts = [spec.host for spec in servers]
 
-        # В дереве показываем Name (или «Name (host)»), host остаётся
+        # В списках показываем Name (host скрыт), host остаётся
         # целью подключения для check/search/консоли.
-        self.servers_tree.set_servers([
-            (spec.display_name(), spec.host)
+        labels = [
+            (spec.ui_label(), spec.host)
             for spec in servers
-        ])
+        ]
 
-        self.panel.set_servers(hosts)
+        self.servers_tree.set_servers(labels)
+
+        self.panel.set_servers(labels)
 
         if self.panel.current_host().strip():
             self._sql_refresh_databases()
@@ -293,7 +295,7 @@ class MainWindow(QWidget):
         )
 
         self.lbl_servers_title.setText(
-            "Servers — Selected: 0"
+            "Серверы — выбрано: 0"
         )
 
         self.append_log(
@@ -394,7 +396,7 @@ class MainWindow(QWidget):
 
         self.lbl_elapsed_value.setText("00:00:00")
 
-        self.lbl_status_value.setText("Ready")
+        self.lbl_status_value.setText("Готово")
 
         self.table.clearSelection()
 
@@ -427,7 +429,7 @@ class MainWindow(QWidget):
         self.action_stop.setEnabled(False)
 
         self.lbl_status_value.setText(
-            "Stopping..."
+            "Остановка..."
         )
 
         self.append_log(
@@ -440,7 +442,7 @@ class MainWindow(QWidget):
         self.action_check.setEnabled(False)
         self.action_stop.setEnabled(True)
 
-        self.lbl_status_value.setText("Checking...")
+        self.lbl_status_value.setText("Проверка...")
 
         self.append_log(
             "INFO",
@@ -467,7 +469,7 @@ class MainWindow(QWidget):
 
         self.progress.setValue(100)
 
-        self.lbl_status_value.setText("Ready")
+        self.lbl_status_value.setText("Готово")
 
         self.append_log(
             "SUCCESS",
@@ -507,34 +509,34 @@ class MainWindow(QWidget):
 
         self.action_refresh = QAction(
             icon("refresh", 20, "#0f172a"),
-            "Refresh",
+            "Обновить",
             self,
         )
         self.action_check = QAction(
             icon("play_arrow", 20, "#0f172a"),
-            "Check",
+            "Проверка",
             self,
         )
         self.action_update = QAction(
             icon("edit", 20, "#0f172a"),
-            "Update",
+            "Изменить",
             self,
         )
         self.action_verify = QAction(
             icon("check_circle", 20, "#0f172a"),
-            "Verify",
+            "Проверить",
             self,
         )
         self.action_stop = QAction(
             icon("stop", 20, "#0f172a"),
-            "Stop",
+            "Стоп",
             self,
         )
-        self.action_refresh.setToolTip("Refresh servers")
-        self.action_check.setToolTip("Run check")
-        self.action_update.setToolTip("Update")
-        self.action_verify.setToolTip("Verify")
-        self.action_stop.setToolTip("Stop")
+        self.action_refresh.setToolTip("Обновить список серверов")
+        self.action_check.setToolTip("Запустить проверку")
+        self.action_update.setToolTip("Изменить сервер")
+        self.action_verify.setToolTip("Проверить")
+        self.action_stop.setToolTip("Остановить")
 
         self.action_update.setEnabled(False)
         self.action_verify.setEnabled(False)
@@ -555,17 +557,17 @@ class MainWindow(QWidget):
         status_layout.setContentsMargins(12, 3, 12, 3)
         status_layout.setSpacing(6)
 
-        self.lbl_status = QLabel("Status:")
-        self.lbl_status_value = QLabel("Ready")
+        self.lbl_status = QLabel("Статус:")
+        self.lbl_status_value = QLabel("Готово")
 
-        self.lbl_servers = QLabel("Servers:")
+        self.lbl_servers = QLabel("Серверы:")
         self.lbl_servers_value = QLabel("0 / 0")
 
-        self.lbl_elapsed = QLabel("Elapsed:")
+        self.lbl_elapsed = QLabel("Прошло:")
         self.lbl_elapsed_value = QLabel("00:00:00")
 
-        self.lbl_sql = QLabel("SQL Console:")
-        self.lbl_sql_status = QLabel("Ready")
+        self.lbl_sql = QLabel("SQL Консоль:")
+        self.lbl_sql_status = QLabel("Готово")
 
         for label in (
             self.lbl_status,
@@ -629,7 +631,7 @@ class MainWindow(QWidget):
         server_layout.setContentsMargins(8, 8, 8, 8)
         server_layout.setSpacing(8)
 
-        self.lbl_servers_title = QLabel("Servers — Selected: 0")
+        self.lbl_servers_title = QLabel("Серверы — выбрано: 0")
         self.lbl_servers_title.setObjectName("SectionTitle")
 
         servers_top = QHBoxLayout()
@@ -641,7 +643,7 @@ class MainWindow(QWidget):
         server_layout.addLayout(servers_top)
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search server, DB, table…")
+        self.search.setPlaceholderText("Поиск сервера, БД, таблицы…")
         self.search.setClearButtonEnabled(True)
         server_layout.addWidget(self.search)
 
@@ -651,26 +653,26 @@ class MainWindow(QWidget):
         self.btn_add_server.setObjectName("btn_icon")
         self.btn_add_server.setIcon(icon("add", 16, "#2563eb"))
         self.btn_add_server.setIconSize(QSize(16, 16))
-        self.btn_add_server.setToolTip("Add server")
+        self.btn_add_server.setToolTip("Добавить сервер")
         self.btn_add_server.clicked.connect(self._add_server)
 
         self.btn_select_all = QToolButton()
         self.btn_select_all.setObjectName("btn_icon")
         self.btn_select_all.setIcon(icon("done_all"))
         self.btn_select_all.setIconSize(QSize(16, 16))
-        self.btn_select_all.setToolTip("Select All")
+        self.btn_select_all.setToolTip("Выбрать все")
 
         self.btn_clear = QToolButton()
         self.btn_clear.setObjectName("btn_icon")
         self.btn_clear.setIcon(icon("close"))
         self.btn_clear.setIconSize(QSize(16, 16))
-        self.btn_clear.setToolTip("Clear selection")
+        self.btn_clear.setToolTip("Снять выделение")
 
         self.btn_invert = QToolButton()
         self.btn_invert.setObjectName("btn_icon")
         self.btn_invert.setIcon(icon("swap_horiz"))
         self.btn_invert.setIconSize(QSize(16, 16))
-        self.btn_invert.setToolTip("Invert selection")
+        self.btn_invert.setToolTip("Инвертировать выделение")
 
         buttons.addWidget(self.btn_add_server)
         buttons.addWidget(self.btn_select_all)
@@ -730,8 +732,8 @@ class MainWindow(QWidget):
         self.btn_export_all.setIcon(icon("download"))
         self.btn_export_all.setIconSize(QSize(16, 16))
         self.btn_export_all.setToolTip(
-            "Save all results without row limit "
-            "(re-runs the last SQL query)"
+            "Сохранить все результаты без ограничения строк "
+            "(повторно выполнит последний SQL-запрос)"
         )
         self.btn_export_all.clicked.connect(self._export_all_results)
 
@@ -766,19 +768,19 @@ class MainWindow(QWidget):
         self.btn_log_clear.setObjectName("btn_icon")
         self.btn_log_clear.setIcon(icon("delete_outline"))
         self.btn_log_clear.setIconSize(QSize(16, 16))
-        self.btn_log_clear.setToolTip("Clear log")
+        self.btn_log_clear.setToolTip("Очистить лог")
 
         self.btn_log_copy = QToolButton()
         self.btn_log_copy.setObjectName("btn_icon")
         self.btn_log_copy.setIcon(icon("content_copy"))
         self.btn_log_copy.setIconSize(QSize(16, 16))
-        self.btn_log_copy.setToolTip("Copy log")
+        self.btn_log_copy.setToolTip("Копировать лог")
 
         self.btn_log_save = QToolButton()
         self.btn_log_save.setObjectName("btn_icon")
         self.btn_log_save.setIcon(icon("download"))
         self.btn_log_save.setIconSize(QSize(16, 16))
-        self.btn_log_save.setToolTip("Save log")
+        self.btn_log_save.setToolTip("Сохранить лог")
 
         top.addWidget(self.btn_log_clear)
         top.addWidget(self.btn_log_copy)
@@ -870,7 +872,7 @@ class MainWindow(QWidget):
         self.btn_search.setToolTip("Найти БД по маске на серверах")
         search_row.addWidget(self.btn_search)
 
-        self.btn_search_stop = QPushButton("Stop")
+        self.btn_search_stop = QPushButton("Остановить")
         self.btn_search_stop.setObjectName("btn_danger")
         self.btn_search_stop.setEnabled(False)
         search_row.addWidget(self.btn_search_stop)
@@ -878,9 +880,9 @@ class MainWindow(QWidget):
         search_layout.addLayout(search_row)
 
         tabs = QTabWidget()
-        tabs.addTab(table_frame, "Results")
-        tabs.addTab(log_frame, "Logs")
-        tabs.addTab(self.queries_panel, "Queries")
+        tabs.addTab(table_frame, "Результаты")
+        tabs.addTab(log_frame, "Журнал")
+        tabs.addTab(self.queries_panel, "Запросы")
 
         self.tabs_frame = QFrame()
         self.tabs_frame.setObjectName("TabsBlock")
@@ -1053,7 +1055,7 @@ class MainWindow(QWidget):
 
     def _update_selected_count(self):
         self.lbl_servers_title.setText(
-            f"Servers — Selected: {self.servers_tree.selected_count()}"
+            f"Серверы — выбрано: {self.servers_tree.selected_count()}"
         )
 
     def _body_section_double_clicked(self, section: int) -> None:
@@ -1161,7 +1163,7 @@ class MainWindow(QWidget):
     def _run_sql(self, sql: str):
 
         if self.query_thread.isRunning():
-            self.lbl_sql_status.setText("A query is already running. Wait or press Stop.")
+            self.lbl_sql_status.setText("Запрос уже выполняется. Подождите или нажмите «Остановить».")
             return
 
         sql = sql.strip()
@@ -1170,13 +1172,13 @@ class MainWindow(QWidget):
             return
 
         if not split_statements(sql):
-            self.lbl_sql_status.setText("No SQL statements to run.")
+            self.lbl_sql_status.setText("Нет SQL-запросов для выполнения.")
             return
 
         targets = self._sql_build_targets()
 
         if not targets:
-            self.lbl_sql_status.setText("No targets selected.")
+            self.lbl_sql_status.setText("Не выбраны цели.")
             return
 
         if not self.panel.write_enabled() and is_write_statement(sql):
@@ -1195,7 +1197,7 @@ class MainWindow(QWidget):
         self._last_sql_request = (targets, sql)
 
         self.lbl_sql_status.setText(
-            f"Running on {len(targets)} target(s)..."
+            f"Выполнение на {len(targets)} цели(ях)..."
         )
         self.panel.set_busy(True)
 
@@ -1260,7 +1262,7 @@ class MainWindow(QWidget):
     def _sql_stop(self):
 
         self.query_worker.stop()
-        self.lbl_sql_status.setText("Stopping...")
+        self.lbl_sql_status.setText("Остановка...")
 
         # KILL активного запроса в фоне, чтобы не блокировать GUI.
         threading.Thread(
@@ -1276,10 +1278,10 @@ class MainWindow(QWidget):
         host = self.panel.current_host()
 
         if not host:
-            self._sql_error("No server selected.")
+            self._sql_error("Не выбран сервер.")
             return
 
-        self.lbl_sql_status.setText("Loading databases...")
+        self.lbl_sql_status.setText("Загрузка списка БД...")
         self.panel.set_busy(True)
         self.panel.set_stop_enabled(False)
 
@@ -1290,18 +1292,18 @@ class MainWindow(QWidget):
     def _sql_clear(self):
 
         self.table.clear_results()
-        self.lbl_sql_status.setText("Ready")
+        self.lbl_sql_status.setText("Готово")
 
     def _set_export_ui(self, running: bool) -> None:
 
         if running:
             self.btn_export_all.setIcon(icon("stop"))
-            self.btn_export_all.setToolTip("Stop export")
+            self.btn_export_all.setToolTip("Остановить экспорт")
         else:
             self.btn_export_all.setIcon(icon("download"))
             self.btn_export_all.setToolTip(
-                "Save all results without row limit "
-                "(re-runs the last SQL query)"
+                "Сохранить все результаты без ограничения строк "
+                "(повторно выполнит последний SQL-запрос)"
             )
 
     def _export_all_results(self):
@@ -1315,17 +1317,17 @@ class MainWindow(QWidget):
                 daemon=True,
             ).start()
 
-            self.lbl_sql_status.setText("Stopping export...")
+            self.lbl_sql_status.setText("Остановка экспорта...")
             return
 
         if self._last_sql_request is None:
-            self.lbl_sql_status.setText("Run a query first.")
+            self.lbl_sql_status.setText("Сначала выполните запрос.")
             return
 
         targets, sql = self._last_sql_request
 
         if is_write_statement(sql):
-            self.lbl_sql_status.setText("Export is available only for read queries.")
+            self.lbl_sql_status.setText("Экспорт доступен только для запросов на чтение.")
             return
 
         filename, _ = QFileDialog.getSaveFileName(
@@ -1338,7 +1340,7 @@ class MainWindow(QWidget):
         if not filename:
             return
 
-        self.lbl_sql_status.setText("Exporting all results...")
+        self.lbl_sql_status.setText("Экспорт всех результатов...")
         self._set_export_ui(True)
 
         self.export_worker.set_export_request(targets, sql, filename)
@@ -1348,7 +1350,7 @@ class MainWindow(QWidget):
     def _export_done(self, total_rows, filepath):
 
         self.lbl_sql_status.setText(
-            f"Saved {total_rows} row(s) to {filepath}"
+            f"Сохранено строк: {total_rows} → {filepath}"
         )
 
         self.append_log(
@@ -1362,7 +1364,7 @@ class MainWindow(QWidget):
 
     def _export_error(self, message):
 
-        self.lbl_sql_status.setText(f"Export error: {message}")
+        self.lbl_sql_status.setText(f"Ошибка экспорта: {message}")
         self._set_export_ui(False)
 
         self.append_log(
@@ -1380,7 +1382,7 @@ class MainWindow(QWidget):
     def _export_stopped(self, done, total):
 
         self.lbl_sql_status.setText(
-            f"Export stopped ({done} of {total})"
+            f"Экспорт остановлен ({done} из {total})"
         )
         self._set_export_ui(False)
 
@@ -1395,7 +1397,7 @@ class MainWindow(QWidget):
     def _sql_target_started(self, index, total, host, database):
 
         self.lbl_sql_status.setText(
-            f"Running ({index}/{total}) {host}.{database}"
+            f"Выполнение ({index}/{total}) {host}.{database}"
         )
 
     def _sql_target_result(
@@ -1435,13 +1437,13 @@ class MainWindow(QWidget):
         )
 
         self.lbl_sql_status.setText(
-            f"Error {host}.{database}"
+            f"Ошибка {host}.{database}"
         )
 
     def _sql_target_stopped(self, done, total):
 
         self.lbl_sql_status.setText(
-            f"Stopped ({done} of {total})"
+            f"Остановлено ({done} из {total})"
         )
         self.panel.set_busy(False)
 
@@ -1463,7 +1465,7 @@ class MainWindow(QWidget):
 
     def _sql_error(self, message):
 
-        self.lbl_sql_status.setText(f"Error: {message}")
+        self.lbl_sql_status.setText(f"Ошибка: {message}")
         self.panel.set_busy(False)
 
         self.append_log(
@@ -1476,7 +1478,7 @@ class MainWindow(QWidget):
         self.panel.set_databases(names)
 
         self.lbl_sql_status.setText(
-            f"{len(names)} database(s) loaded."
+            f"Загружено БД: {len(names)}."
         )
         self.panel.set_busy(False)
 
@@ -1492,7 +1494,7 @@ class MainWindow(QWidget):
         mask = self.ed_search_mask.text().strip()
 
         if not mask:
-            self.lbl_sql_status.setText("Enter a database mask.")
+            self.lbl_sql_status.setText("Введите маску БД.")
             return
 
         # Транслитерация '?' и '*' в LIKE-джокеры.
@@ -1505,14 +1507,14 @@ class MainWindow(QWidget):
         # чтобы не ломать запрос и не выводить мусор.
         if any(ch in mask for ch in ("`", "\x00")):
             self.lbl_sql_status.setText(
-                "Mask contains invalid characters."
+                "Маска содержит недопустимые символы."
             )
             return
 
         servers = self.repository.load_servers()
 
         if not servers:
-            self.lbl_sql_status.setText("No servers to search.")
+            self.lbl_sql_status.setText("Нет серверов для поиска.")
             return
 
         servers = [spec.host for spec in servers]
@@ -1521,7 +1523,7 @@ class MainWindow(QWidget):
         servers = [s for s in servers if registry.engine(s) == ENGINE_MYSQL]
 
         if not servers:
-            self.lbl_sql_status.setText("No MySQL servers to search.")
+            self.lbl_sql_status.setText("Нет MySQL-серверов для поиска.")
             return
 
         # Поиск показывает результат в таблице Results с колонками
@@ -1536,7 +1538,7 @@ class MainWindow(QWidget):
         self._search_stopped = False
 
         self.lbl_sql_status.setText(
-            f"Searching '{mask}' on {len(servers)} server(s)..."
+            f"Поиск «{mask}» на {len(servers)} сервере(ах)..."
         )
 
         self._search_busy(True)
@@ -1556,7 +1558,7 @@ class MainWindow(QWidget):
 
         self._search_stopped = True
 
-        self.lbl_sql_status.setText("Stopping search...")
+        self.lbl_sql_status.setText("Остановка поиска...")
 
     def _search_started(self):
 
@@ -1577,12 +1579,11 @@ class MainWindow(QWidget):
         self._search_busy(False)
 
         if self._search_stopped:
-            self.lbl_sql_status.setText("Search stopped.")
+            self.lbl_sql_status.setText("Поиск остановлен.")
         else:
             self.lbl_sql_status.setText(
-                f"Search finished: {self._search_found} "
-                f"database(s) found on {self._search_completed} "
-                f"server(s)."
+                f"Поиск завершён: найдено БД — {self._search_found} "
+                f"на {self._search_completed} сервере(ах)."
             )
 
         self.progress.setValue(0)
@@ -1649,7 +1650,7 @@ class MainWindow(QWidget):
         self.table.results_source = "sql"
 
         self.lbl_sql_status.setText(
-            f"Running {server}.{database}.{table}..."
+            f"Выполнение {server}.{database}.{table}..."
         )
         self.panel.set_busy(True)
 

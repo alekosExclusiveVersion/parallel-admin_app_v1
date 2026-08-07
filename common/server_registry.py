@@ -54,6 +54,11 @@ class ServerSpec:
             return f"{self.name} ({self.host})"
         return self.host
 
+    def ui_label(self) -> str:
+        """Имя для списков серверов: только Name (host скрыт),
+        при отсутствии имени — host."""
+        return self.name or self.host
+
 
 def default_port(engine: str) -> int:
     if engine == ENGINE_MSSQL:

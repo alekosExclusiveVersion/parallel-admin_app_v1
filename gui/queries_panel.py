@@ -39,7 +39,7 @@ class QueriesPanel(QWidget):
 
         qtop = QHBoxLayout()
 
-        self.lbl_title = QLabel("Query log")
+        self.lbl_title = QLabel("Журнал запросов")
         self.lbl_title.setObjectName("SectionTitle")
         qtop.addWidget(self.lbl_title)
 
@@ -49,7 +49,7 @@ class QueriesPanel(QWidget):
         self.btn_clear.setObjectName("btn_icon")
         self.btn_clear.setIcon(icon("delete_outline"))
         self.btn_clear.setIconSize(QSize(16, 16))
-        self.btn_clear.setToolTip("Clear query log")
+        self.btn_clear.setToolTip("Очистить журнал запросов")
 
         qtop.addWidget(self.btn_clear)
 
@@ -61,7 +61,7 @@ class QueriesPanel(QWidget):
 
         layout.addWidget(self.log)
 
-        lbl = QLabel("Scan template")
+        lbl = QLabel("Шаблон сканирования")
         lbl.setObjectName("SectionTitle")
         layout.addWidget(lbl)
 
@@ -71,7 +71,7 @@ class QueriesPanel(QWidget):
         layout.addWidget(self.editor)
 
         hint = QLabel(
-            "Placeholders: {db} {dbq} {table} {country} {target}"
+            "Плейсхолдеры: {db} {dbq} {table} {country} {target}"
         )
         hint.setStyleSheet(
             "color:#94a3b8;font-size:12px;"
@@ -82,8 +82,8 @@ class QueriesPanel(QWidget):
         qbuttons = QHBoxLayout()
         qbuttons.addStretch()
 
-        self.btn_apply = QPushButton("Apply")
-        self.btn_rerun = QPushButton("Run check")
+        self.btn_apply = QPushButton("Применить")
+        self.btn_rerun = QPushButton("Запустить проверку")
         self.btn_rerun.setObjectName("btn_primary")
 
         qbuttons.addWidget(self.btn_apply)

@@ -374,17 +374,17 @@ class ResultTable(QTableWidget):
         row = self.currentRow()
 
         menu = QMenu(self)
-        copy_row = menu.addAction("Copy Row")
-        copy_server = menu.addAction("Copy Server")
-        copy_database = menu.addAction("Copy Database")
+        copy_row = menu.addAction("Копировать строку")
+        copy_server = menu.addAction("Копировать сервер")
+        copy_database = menu.addAction("Копировать БД")
 
         menu.addSeparator()
 
-        export_csv = menu.addAction("Export CSV...")
+        export_csv = menu.addAction("Экспорт CSV...")
 
         menu.addSeparator()
 
-        clear_action = menu.addAction("Clear results")
+        clear_action = menu.addAction("Очистить результаты")
 
         action = menu.exec(self.viewport().mapToGlobal(pos))
 

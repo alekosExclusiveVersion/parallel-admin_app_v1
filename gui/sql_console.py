@@ -151,7 +151,7 @@ class SqlConsolePanel(QWidget):
 
         sctop = QHBoxLayout()
 
-        self.lbl_title = QLabel("SQL Console")
+        self.lbl_title = QLabel("SQL Консоль")
         self.lbl_title.setObjectName("SectionTitle")
         sctop.addWidget(self.lbl_title)
 
@@ -161,13 +161,13 @@ class SqlConsolePanel(QWidget):
         self.btn_refresh_db.setObjectName("btn_icon")
         self.btn_refresh_db.setIcon(icon("refresh"))
         self.btn_refresh_db.setIconSize(QSize(16, 16))
-        self.btn_refresh_db.setToolTip("Refresh databases")
+        self.btn_refresh_db.setToolTip("Обновить список БД")
 
         self.btn_clear = QToolButton()
         self.btn_clear.setObjectName("btn_icon")
         self.btn_clear.setIcon(icon("delete_outline"))
         self.btn_clear.setIconSize(QSize(16, 16))
-        self.btn_clear.setToolTip("Clear console")
+        self.btn_clear.setToolTip("Очистить консоль")
 
         sctop.addWidget(self.btn_refresh_db)
         sctop.addWidget(self.btn_clear)
@@ -235,18 +235,18 @@ class SqlConsolePanel(QWidget):
         run_row = QHBoxLayout()
         run_row.addStretch()
 
-        self.btn_run = QPushButton("Run")
+        self.btn_run = QPushButton("Выполнить")
         self.btn_run.setObjectName("btn_primary")
         self.btn_run.setToolTip(
-            "Run script (Cmd/Ctrl+Shift+Enter); "
-            "run selection or statement under cursor (Cmd/Ctrl+Enter)"
+            "Выполнить скрипт (Cmd/Ctrl+Shift+Enter); "
+            "выполнить выделение или оператор под курсором (Cmd/Ctrl+Enter)"
         )
 
         run_row.addWidget(self.btn_run)
 
-        self.btn_stop = QPushButton("Stop")
+        self.btn_stop = QPushButton("Остановить")
         self.btn_stop.setObjectName("btn_danger")
-        self.btn_stop.setToolTip("Stop running query")
+        self.btn_stop.setToolTip("Остановить выполняемый запрос")
         self.btn_stop.setEnabled(False)
 
         run_row.addWidget(self.btn_stop)
@@ -256,8 +256,8 @@ class SqlConsolePanel(QWidget):
         self.editor = SqlEditor()
         self.editor.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.editor.setPlaceholderText(
-            "Write SQL query... Cmd/Ctrl+Enter to run selection "
-            "or statement under cursor, Cmd/Ctrl+Shift+Enter to run all"
+            "Введите SQL-запрос... Cmd/Ctrl+Enter — выполнить выделение "
+            "или оператор под курсором, Cmd/Ctrl+Shift+Enter — выполнить всё"
         )
         self.editor.setTabStopDistance(40)
 
@@ -335,19 +335,43 @@ class SqlConsolePanel(QWidget):
         self.cb_database.blockSignals(False)
 
     def set_target(self, server: str, database: str) -> None:
-        self.cb_server.setCurrentText(server)
+        self._select_server_by_host(server)
         self.cb_database.setCurrentText(database)
 
-    def set_servers(self, servers: list[str]) -> None:
-        current_server = self.cb_server.currentText()
+    def _select_server_by_host(self, server: str) -> None:
+        """Выбирает сервер по хосту: в списке хранится имя (Name),
+        а host — в данных пункта."""
+        for index in range(self.cb_server.count()):
+            if self.cb_server.itemData(index) == server:
+                self.cb_server.setCurrentIndex(index)
+                return
+        # Сервера нет в списке — подставляем хост как текст
+        self.cb_server.setCurrentText(server)
+
+    def set_servers(
+        self, servers: list[str] | list[tuple]
+    ) -> None:
+        """Заполняет выпадающий список серверов.
+
+        Элемент — строка-хост либо пара (display_name, host):
+        отображается Name, host хранится в данных пункта и используется
+        как цель подключения (current_host()).
+        """
+        previous = self.current_host()
 
         self.cb_server.blockSignals(True)
 
         self.cb_server.clear()
-        self.cb_server.addItems(servers)
 
-        if current_server:
-            self.cb_server.setCurrentText(current_server)
+        for entry in servers:
+            if isinstance(entry, (tuple, list)):
+                display, host = entry
+            else:
+                display = host = entry
+            self.cb_server.addItem(display, host)
+
+        if previous:
+            self._select_server_by_host(previous)
 
         self.cb_server.blockSignals(False)
 
@@ -355,6 +379,19 @@ class SqlConsolePanel(QWidget):
         self.editor.clear()
 
     def current_host(self) -> str:
+        """Хост выбранного сервера (имя в списке, host — в данных пункта).
+
+        Если пользователь ввёл произвольный текст (не совпадает с пунктом
+        списка) — возвращает его как есть.
+        """
+        index = self.cb_server.currentIndex()
+        if index >= 0:
+            text = self.cb_server.currentText()
+            if text != self.cb_server.itemText(index):
+                return text.strip()
+            host = self.cb_server.itemData(index)
+            if host:
+                return str(host)
         return self.cb_server.currentText().strip()
 
     def current_database(self) -> str:
