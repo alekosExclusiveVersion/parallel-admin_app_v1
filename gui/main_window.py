@@ -546,8 +546,6 @@ class MainWindow(QWidget):
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.action_stop)
 
-        content.addWidget(self.toolbar)
-
         status_bar = QFrame()
         status_bar.setObjectName("StatusBar")
 
@@ -1279,7 +1277,17 @@ class MainWindow(QWidget):
             self.sql_editor.document()
         )
 
-        content.addWidget(body_splitter, 1)
+        # Панель инструментов размещена в splitter, чтобы её можно было
+        # сворачивать и раскрывать двойным кликом по ручке.
+        self.toolbar_splitter = CollapsibleSplitter(Qt.Vertical)
+        self.toolbar_splitter.setHandleWidth(8)
+        self.toolbar_splitter.addWidget(self.toolbar)
+        self.toolbar_splitter.addWidget(body_splitter)
+        self.toolbar_splitter.setStretchFactor(0, 0)
+        self.toolbar_splitter.setStretchFactor(1, 1)
+        self.toolbar_splitter.setSizes([42, 900])
+
+        content.addWidget(self.toolbar_splitter, 1)
 
         root.addWidget(content_widget, 1)
 
