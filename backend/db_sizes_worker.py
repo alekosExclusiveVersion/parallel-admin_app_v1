@@ -3,16 +3,18 @@ backend/db_sizes_worker.py
 
 Фоновая загрузка размеров баз данных и таблиц для дерева серверов.
 
-Используется постоянный поток-потребитель с очередью задач:
-раскрытие узла кладёт запрос в очередь, а worker выполняет его
-и возвращает результат через сигналы. Это корректно обрабатывает
-быстрые последовательные раскрытия нескольких узлов.
+Worker живёт в постоянном QThread: run() мгновенно возвращается, поток
+остаётся в Qt event loop (exec), а запросы приходят слотами
+request_databases()/request_tables() через queued-соединение из GUI-потока.
+Qt event loop и есть очередь задач — быстрые последовательные раскрытия
+нескольких узлов обрабатываются по одному.
+
+ВНИМАНИЕ: здесь нельзя блокировать поток собственным while-циклом
+(например, на Condition) — тогда до event loop не дойдёт очередь и
+queued-слоты никогда не вызовутся.
 """
 
 from __future__ import annotations
-
-import threading
-from collections import deque
 
 from PySide6.QtCore import QObject, Signal, Slot
 
@@ -27,53 +29,39 @@ class DbSizesWorker(QObject):
 
     def __init__(self):
         super().__init__()
-        self._queue: deque[tuple] = deque()
-        self._cv = threading.Condition()
         self._stop = False
 
-    def request_databases(self, servers: list[str]):
-        with self._cv:
-            self._queue.append(("databases", list(servers)))
-            self._cv.notify()
-
-    def request_tables(self, server: str, database: str):
-        with self._cv:
-            self._queue.append(("tables", server, database))
-            self._cv.notify()
-
     def stop(self):
-        with self._cv:
-            self._stop = True
-            self._cv.notify()
+        self._stop = True
+        self.finished.emit()
 
     @Slot()
     def run(self):
-        while True:
-            with self._cv:
-                while not self._queue and not self._stop:
-                    self._cv.wait(timeout=0.5)
-                if self._stop:
-                    break
-                task = self._queue.popleft()
+        """Оставляем поток живым: задача выполняется слотами request_*,
+        вызываемыми queued-соединением в event loop потока."""
+        pass
 
-            kind = task[0]
+    @Slot(list)
+    def request_databases(self, servers: list[str]):
+        if self._stop:
+            return
 
-            if kind == "databases":
-                servers = task[1]
-                for server in servers:
-                    if self._stop:
-                        break
-                    try:
-                        sizes = mysql.database_sizes(server)
-                        self.databases.emit(server, sizes)
-                    except Exception as ex:
-                        self.error.emit(server, "databases", str(ex))
-            else:
-                _, server, database = task
-                try:
-                    sizes = mysql.database_table_sizes(server, database)
-                    self.tables.emit(server, database, sizes)
-                except Exception as ex:
-                    self.error.emit(server, database, str(ex))
+        for server in servers:
+            if self._stop:
+                break
+            try:
+                sizes = mysql.database_sizes(server)
+                self.databases.emit(server, sizes)
+            except Exception as ex:
+                self.error.emit(server, "databases", str(ex))
 
-        self.finished.emit()
+    @Slot(str, str)
+    def request_tables(self, server: str, database: str):
+        if self._stop:
+            return
+
+        try:
+            sizes = mysql.database_table_sizes(server, database)
+            self.tables.emit(server, database, sizes)
+        except Exception as ex:
+            self.error.emit(server, database, str(ex))
