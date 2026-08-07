@@ -1,6 +1,7 @@
 import os
 import shutil
 import sys
+import traceback
 from pathlib import Path
 
 
@@ -64,7 +65,7 @@ def light_palette() -> QPalette:
     return p
 
 
-def main():
+def main() -> int:
 
     qt_app = QApplication(sys.argv)
 
@@ -77,16 +78,42 @@ def main():
     login = LoginDialog()
 
     if login.exec() != LoginDialog.Accepted:
-        sys.exit(0)
+        return 0
 
     window = App()
 
     window.show()
 
-    sys.exit(
-        qt_app.exec()
-    )
+    rc = qt_app.exec()
+
+    # Явно удаляем Python-обёртки Qt-виджетов до выхода из интерпретатора:
+    # иначе PySide6 при atexit удаляет C++-объекты повторно и падает
+    # с SIGSEGV (известная проблема PySide6 6.11 в frozen-сборках).
+    window.close()
+    window.deleteLater()
+    login.deleteLater()
+    qt_app.processEvents()
+    del login, window
+
+    return rc
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception:
+        # В windowed-сборке PyInstaller traceback уходит в /dev/null,
+        # поэтому пишем его в файл рядом с конфигом.
+        try:
+            crash_dir = (
+                Path(os.environ.get("HOME", str(Path.home())))
+                / "Library" / "Application Support" / "Parallels SQL Admin"
+            )
+            crash_dir.mkdir(parents=True, exist_ok=True)
+            with open(crash_dir / "crash.log", "w") as f:
+                f.write(traceback.format_exc())
+        except Exception:
+            pass
+        sys.exit(1)
