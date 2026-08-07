@@ -61,6 +61,7 @@ from common.version import APP_VERSION
 from gui.icons import icon
 from gui.sql_highlighter import SQLHighlighter
 from gui.styles import SHARED_STYLESHEET
+from gui.widgets.filter_header import FilterHeaderRow
 
 
 class ComboItemDelegate(QStyledItemDelegate):
@@ -467,7 +468,7 @@ class MainWindow(QWidget):
         self.table.resizeColumnToContents(5)
         self.table.resizeColumnToContents(6)
 
-        self._repopulate_filter_column()
+        self._sync_filter_columns()
 
         self._filter_results()
 
@@ -743,42 +744,19 @@ class MainWindow(QWidget):
 
         filter_layout = QHBoxLayout()
 
-        self.lbl_column = QLabel("Колонка:")
-        self.lbl_column.setStyleSheet(
-            "border:none;background:transparent;color:#0f172a;"
-        )
-        filter_layout.addWidget(self.lbl_column)
-
-        self.combo_filter_column = QComboBox()
-        self.combo_filter_column.setMinimumWidth(120)
-        self.combo_filter_column.view().setItemDelegate(
-            ComboItemDelegate(self.combo_filter_column.view())
-        )
-
-        filter_layout.addWidget(self.combo_filter_column)
-
         self.result_search = QLineEdit()
         self.result_search.setPlaceholderText(
-            "Filter by selected column..."
+            "Поиск по всем колонкам..."
         )
         self.result_search.setClearButtonEnabled(True)
+        self.result_search.setToolTip(
+            "Сквозной поиск: строка видима, если текст найден "
+            "хотя бы в одной колонке (OR)."
+        )
         filter_layout.addWidget(
             self.result_search,
             1,
         )
-
-        self.combo_filter_mode = QComboBox()
-        self.combo_filter_mode.addItems([
-            "Contains",
-            "Equals",
-            "Empty",
-            "Not empty",
-        ])
-        self.combo_filter_mode.view().setItemDelegate(
-            ComboItemDelegate(self.combo_filter_mode.view())
-        )
-
-        filter_layout.addWidget(self.combo_filter_mode)
 
         self.chk_only_errors = QCheckBox(
             "Только ошибки"
@@ -789,6 +767,13 @@ class MainWindow(QWidget):
         # убрать текстовую кнопку Reset Filters — очищение слева в текстовом поле
 
         table_layout.addLayout(filter_layout)
+
+        # Фильтры по колонкам находятся отдельной строкой над таблицей.
+        # В отличие от общего поиска каждое поле относится только к своей
+        # колонке; это позволяет комбинировать точечные условия через OR.
+        self.filter_header = FilterHeaderRow()
+        self.filter_header.setObjectName("FilterHeaderRow")
+        table_layout.addWidget(self.filter_header)
 
         self.table = QTableWidget()
 
@@ -832,6 +817,11 @@ class MainWindow(QWidget):
         self.table.setCornerButtonEnabled(False)
 
         self.table.setFocusPolicy(Qt.StrongFocus)
+
+        # Привязываем строку фильтров к таблице после её создания. Виджет
+        # слушает изменения ширины/порядка колонок и горизонтального скролла,
+        # поэтому поля всегда остаются выровненными с заголовками.
+        self.filter_header.bind(self.table)
 
         # ----------------------------------------------------------
         # ResultTable signals
@@ -1347,17 +1337,11 @@ class MainWindow(QWidget):
             self._filter_results
         )
 
-        self.combo_filter_column.currentTextChanged.connect(
-            self._filter_results
-        )
-
-        self.combo_filter_mode.currentTextChanged.connect(
-            self._filter_results
+        self.filter_header.filterChanged.connect(
+            self._on_result_search_changed
         )
 
         # фильтры очищаются через встроенную кнопку clear в поле result_search
-
-        self._repopulate_filter_column()
     # --------------------------------------------------------------
     # Slots
     # --------------------------------------------------------------
@@ -1734,7 +1718,7 @@ class MainWindow(QWidget):
 
         self._results_source = None
 
-        self._repopulate_filter_column()
+        self._sync_filter_columns()
         self._filter_results()
         self._update_only_errors_visibility()
 
@@ -2086,7 +2070,7 @@ class MainWindow(QWidget):
     def _sql_finished(self):
 
         self.table.setSortingEnabled(True)
-        self._repopulate_filter_column()
+        self._sync_filter_columns()
         self._filter_results()
         self._sql_busy(False)
         # Авто-показ блока Results по завершении запроса
@@ -2175,7 +2159,7 @@ class MainWindow(QWidget):
                 if index < len(labels):
                     header.resizeSection(index, width)
 
-            self._repopulate_filter_column()
+            self._sync_filter_columns()
 
         if not columns:
             rows = [[message]]
@@ -2321,7 +2305,7 @@ class MainWindow(QWidget):
 
         self.table.setSortingEnabled(True)
 
-        self._repopulate_filter_column()
+        self._sync_filter_columns()
 
         self._filter_results()
 
@@ -2376,7 +2360,7 @@ class MainWindow(QWidget):
                 if index < len(labels):
                     header.resizeSection(index, width)
 
-            self._repopulate_filter_column()
+            self._sync_filter_columns()
 
         self._add_table_row([server, database])
 
@@ -2468,37 +2452,29 @@ class MainWindow(QWidget):
 
         return None
 
-    def _repopulate_filter_column(self):
+    def _sync_filter_columns(self):
+        """Пересоздаёт колоночные фильтры по текущим заголовкам таблицы.
 
-        if not self.combo_filter_column:
-            return
-
-        current = self.combo_filter_column.currentText()
-
+        Вызывается при смене набора колонок (Check / SQL / Search), чтобы
+        строка FilterHeaderRow содержала по одному полю на каждую колонку.
+        Старые поля намеренно пересоздаются: после смены типа результата
+        прежние значения могли бы примениться к другой колонке.
+        """
         headers = [
             self.table.horizontalHeaderItem(column).text()
             for column in range(self.table.columnCount())
             if self.table.horizontalHeaderItem(column) is not None
         ]
 
-        self.combo_filter_column.blockSignals(True)
-
-        self.combo_filter_column.clear()
-        self.combo_filter_column.addItems(headers)
-
-        if current in headers:
-            self.combo_filter_column.setCurrentText(current)
-        elif headers:
-            self.combo_filter_column.setCurrentIndex(0)
-
-        self.combo_filter_column.blockSignals(False)
+        self.filter_header.rebuild(headers)
 
     def _on_result_search_changed(self):
         """Debounce-обработчик изменения текста в поле фильтра результатов.
 
-        Вызывается при каждом изменении текста в поле result_search
-        (см. подключение сигнала в _build_ui). Сам фильтр не запускается
-        мгновенно: вместо этого перезапускается одноразовый таймер
+        Вызывается при каждом изменении текста в поле result_search или
+        в любом из колоночных полей FilterHeaderRow (см. подключение
+        сигналов в _build_ui). Сам фильтр не запускается мгновенно:
+        вместо этого перезапускается одноразовый таймер
         self._filter_timer (40 мс), чтобы не перерисовывать таблицу на
         каждый нажатый символ. По истечении таймера срабатывает
         self._filter_results().
@@ -2506,31 +2482,31 @@ class MainWindow(QWidget):
         self._filter_timer.start()
 
     def _filter_results(self):
+        """Применяет фильтры результатов (общий сквозной + колоночные, OR).
 
+        - Общий сквозной фильтр result_search: строка видима, если текст
+          найден (contains, регистронезависимо) хотя бы в одной колонке.
+        - Колоночные фильтры FilterHeaderRow: каждый непустой фильтр
+          ищет (contains) в своей колонке.
+        - Все условия объединяются как OR — достаточно совпадения хотя бы
+          одного условия, чтобы строка осталась видимой.
+        - Если ни один фильтр не заполнен — показываются все строки.
+        - Чекбокс "Только ошибки" применяется дополнительно как AND:
+          после OR-фильтрации остаются только строки со статусом ERROR.
+        """
+        # Нормализуем ввод один раз: фильтрация является регистронезависимой,
+        # поэтому и запрос, и значения таблицы сравниваются в lower-case.
         search = self.result_search.text().strip().lower()
 
+        # Этот флаг не является частью OR-набора. Он накладывается после
+        # поиска и тем самым работает как дополнительное условие AND.
         only_errors = self.chk_only_errors.isChecked()
-
-        mode = self.combo_filter_mode.currentText()
-
-        column = self.combo_filter_column.currentText()
-
-        column_index = None
-
-        if column:
-
-            for index in range(self.table.columnCount()):
-
-                item = self.table.horizontalHeaderItem(index)
-
-                if item is not None and item.text() == column:
-                    column_index = index
-                    break
 
         status_index = self._column_index("Status")
 
-        def _is_empty(text):
-            return text.strip() in ("", "-")
+        # Колоночные фильтры (по одной колонке, contains). Пустые поля
+        # исключаются из OR-набора внутри _matches_column_filters().
+        column_filters = self.filter_header.get_filters()
 
         table = self.table
 
@@ -2540,30 +2516,59 @@ class MainWindow(QWidget):
 
         table.setUpdatesEnabled(False)
 
+        def _row_texts(row):
+            """Возвращает тексты всех колонок строки (нижний регистр).
+
+            Пустые ячейки превращаются в пустую строку, чтобы фильтр не
+            зависел от наличия QTableWidgetItem в конкретной ячейке.
+            """
+            texts = []
+            for column in range(table.columnCount()):
+                item = table.item(row, column)
+                texts.append((item.text() if item else "").lower())
+            return texts
+
+        def _matches_global(row_texts):
+            """True, если сквозной фильтр совпал хотя бы в одной колонке.
+
+            Пустой сквозной фильтр не даёт совпадения — он активен только
+            когда в поле result_search есть текст. Это важно для OR-логики:
+            пустая строка технически содержится в любом тексте, но не должна
+            делать все строки видимыми вместо реально заданных фильтров.
+            """
+            if not search:
+                return False
+            return any(search in text for text in row_texts)
+
+        def _matches_columns(row_texts):
+            """True, если хотя бы один непустой колоночный фильтр совпал."""
+            # Поля колонок являются независимыми альтернативами: фильтр
+            # по Server не обязан совпадать одновременно с фильтром Status.
+            for column, col_filter in enumerate(column_filters):
+                if col_filter and column < len(row_texts):
+                    if col_filter in row_texts[column]:
+                        return True
+            return False
+
         try:
 
             for row in range(table.rowCount()):
 
-                visible = True
+                row_texts = _row_texts(row)
 
-                if visible and column_index is not None:
+                # OR: общий сквозной ИЛИ колоночные фильтры. Если фильтры
+                # пусты, строка проходит базовую проверку без ограничений.
+                has_any_filter = bool(search) or any(column_filters)
 
-                    item = table.item(row, column_index)
+                if not has_any_filter:
+                    visible = True
+                else:
+                    visible = (
+                        _matches_global(row_texts)
+                        or _matches_columns(row_texts)
+                    )
 
-                    text = item.text() if item else ""
-
-                    if mode == "Contains":
-                        visible = search in text.lower()
-
-                    elif mode == "Equals":
-                        visible = text.lower() == search
-
-                    elif mode == "Empty":
-                        visible = _is_empty(text)
-
-                    elif mode == "Not empty":
-                        visible = not _is_empty(text)
-
+                # AND: только ошибки
                 if visible and only_errors and status_index is not None:
 
                     item = table.item(row, status_index)

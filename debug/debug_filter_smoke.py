@@ -1,0 +1,116 @@
+"""Smoke-тест новой фильтрации Results (сквозной + колоночные, OR).
+
+Запуск: python3 debug/debug_filter_smoke.py
+Работает без отображения окна (QT_QPA_PLATFORM=offscreen).
+"""
+
+import os
+import sys
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from PySide6.QtWidgets import QApplication
+
+from gui.main_window import MainWindow
+
+
+def cell_text(window, row, col):
+    item = window.table.item(row, col)
+    return item.text() if item else ""
+
+
+def count_visible(window):
+    return sum(
+        1
+        for row in range(window.table.rowCount())
+        if not window.table.isRowHidden(row)
+    )
+
+
+def main():
+    app = QApplication.instance() or QApplication(sys.argv)
+
+    window = MainWindow()
+    window.show()
+
+    # Заполняем таблицу тестовыми данными (как в Check)
+    window.clear_results()
+    window._results_source = "check"
+    window._update_only_errors_visibility()
+
+    rows = [
+        ["Check", "srv1", "db_alpha", "RU", "10", "OK", "fine"],
+        ["Check", "srv1", "db_beta", "RU", "20", "ERROR", "boom"],
+        ["Check", "srv2", "db_gamma", "US", "30", "WARNING", "warn"],
+        ["Check", "srv2", "db_delta", "FR", "40", "OK", "ok"],
+    ]
+    for r in rows:
+        window._add_table_row(r, status_col=5)
+
+    window._sync_filter_columns()
+    window._filter_results()
+
+    assert window.table.columnCount() == 7, "ожидается 7 колонок"
+    assert len(window.filter_header._edits) == 7, "ожидается 7 полей фильтра"
+
+    # 1) Без фильтров — все строки видимы
+    assert count_visible(window) == 4, f"ожидалось 4, получено {count_visible(window)}"
+
+    # 2) Сквозной поиск "srv2" — строки 3,4
+    window.result_search.setText("srv2")
+    window._filter_results()
+    assert count_visible(window) == 2, f"сквозной srv2: {count_visible(window)}"
+
+    # 3) Сквозной поиск по значению в Message "boom" — строка 2
+    window.result_search.setText("boom")
+    window._filter_results()
+    assert count_visible(window) == 1, f"сквозной boom: {count_visible(window)}"
+
+    # 4) Колоночный фильтр: Server == "srv1" (index 1) — строки 1,2
+    window.result_search.clear()
+    window._filter_results()
+    window.filter_header._edits[1].setText("srv1")
+    window._filter_results()
+    assert count_visible(window) == 2, f"колонка Server srv1: {count_visible(window)}"
+
+    # 5) OR: Server=srv1 (строки 0,1) ИЛИ Status=ERROR (строка 1) — итого 2
+    window.filter_header._edits[5].setText("ERROR")
+    window._filter_results()
+    assert count_visible(window) == 2, f"OR srv1|ERROR: {count_visible(window)}"
+
+    # 6) Сквозной + колоночный вместе (OR-набор): srv2 ИЛИ Message=boom
+    window.filter_header.clear_filters()
+    window.result_search.setText("srv2")
+    window.filter_header._edits[6].setText("boom")
+    window._filter_results()
+    assert count_visible(window) == 3, f"OR srv2|boom: {count_visible(window)}"
+
+    # 7) Только ошибки (AND к OR-набору): среди {srv1/boom} остаётся строка ERROR
+    window.chk_only_errors.setChecked(True)
+    window._filter_results()
+    assert count_visible(window) == 1, f"только ошибки: {count_visible(window)}"
+    visible_rows = [
+        row for row in range(window.table.rowCount())
+        if not window.table.isRowHidden(row)
+    ]
+    assert len(visible_rows) == 1, f"видимых строк: {visible_rows}"
+    assert cell_text(window, visible_rows[0], 5) == "ERROR", (
+        f"статус видимой строки: {cell_text(window, visible_rows[0], 5)}"
+    )
+
+    # 8) Пустой сквозной + колоночный — только колоночный работает
+    window.chk_only_errors.setChecked(False)
+    window.result_search.clear()
+    window.filter_header.clear_filters()
+    window.filter_header._edits[1].setText("srv2")
+    window._filter_results()
+    assert count_visible(window) == 2, f"колонка srv2: {count_visible(window)}"
+
+    print("ALL FILTER SMOKE TESTS PASSED")
+    window.close()
+
+
+if __name__ == "__main__":
+    main()
