@@ -53,6 +53,7 @@ class FilterHeaderRow(QWidget):
             Qt.ScrollBarAlwaysOff
         )
         self._scroll.setFrameShape(QScrollArea.NoFrame)
+        self._scroll.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self._scroll.setStyleSheet(
             "QScrollArea{background:transparent;border:none;}"
         )
