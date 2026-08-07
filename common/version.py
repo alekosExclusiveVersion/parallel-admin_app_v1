@@ -3,4 +3,4 @@ common/version.py
 Версия приложения.
 """
 
-APP_VERSION = "4.12.60"
+APP_VERSION = "4.12.61"
