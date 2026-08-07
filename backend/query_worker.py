@@ -102,7 +102,7 @@ class QueryWorker(QObject):
 
         with mysql.connect(host, database) as conn:
             self._active_host = host
-            self._active_id = conn.connection_id
+            self._active_id = conn.thread_id()
 
             try:
                 with conn.cursor() as cur:

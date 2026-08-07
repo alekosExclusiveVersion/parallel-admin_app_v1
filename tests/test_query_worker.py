@@ -28,8 +28,6 @@ class FakeCursor:
 
 
 class FakeConn:
-    connection_id = 4242
-
     def __init__(self):
         self._cursor = FakeCursor()
 
@@ -38,6 +36,9 @@ class FakeConn:
 
     def __exit__(self, *args):
         return False
+
+    def thread_id(self):
+        return 4242
 
     def cursor(self):
         return self._cursor
