@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import os
+import sys
+import traceback
+from pathlib import Path
+
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
     QDialog,
@@ -36,9 +41,24 @@ class _LoginWorker(QObject):
                 pass
 
         except Exception as ex:
+            self._write_error(ex)
             self.finished.emit(False, str(ex))
         else:
             self.finished.emit(True, "")
+
+    @staticmethod
+    def _write_error(ex: Exception) -> None:
+        try:
+            base = (
+                Path(os.environ.get("HOME", str(Path.home())))
+                / "Library" / "Application Support" / "Parallels SQL Admin"
+            )
+            base.mkdir(parents=True, exist_ok=True)
+            with open(base / "login_error.log", "w") as f:
+                f.write(f"{type(ex).__name__}: {ex}\n")
+                f.write(traceback.format_exc())
+        except Exception:
+            pass
 
 
 class LoginDialog(QDialog):
