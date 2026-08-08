@@ -18,6 +18,7 @@ from __future__ import annotations
 import atexit
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import Any
 
@@ -32,6 +33,28 @@ _SYSTEM_DBS = frozenset(
     ("master", "tempdb", "model", "msdb",
      "information_schema", "performance_schema", "mysql", "sys"),
 )
+
+
+def _escape_bracket(name: str) -> str:
+    """Экранирование имени БД внутри [..] (T-SQL)."""
+    return name.replace("]", "]]")
+
+
+# Запрос размеров таблиц текущей БД (контекст задаётся USE [db]).
+_TABLE_SIZES_SQL = """
+SELECT
+    CASE WHEN s.name = 'dbo' THEN t.name ELSE s.name + N'.' + t.name END
+        AS table_name,
+    SUM(a.total_pages) * 8 * 1024 AS total_bytes
+FROM sys.tables t
+JOIN sys.schemas s ON t.schema_id = s.schema_id
+JOIN sys.indexes i ON t.object_id = i.object_id
+JOIN sys.partitions p ON i.object_id = p.object_id AND i.index_id = p.index_id
+JOIN sys.allocation_units a ON p.partition_id = a.container_id
+WHERE a.type IN (1, 2)
+GROUP BY s.name, t.name
+ORDER BY total_bytes DESC
+"""
 
 
 class MSSQLClient:
@@ -219,29 +242,65 @@ GROUP BY database_id
         self,
         host: str,
     ) -> tuple[dict[str, int], dict[str, list[tuple[str, int]]]]:
-        """Размеры всех БД сервера. Таблицы возвращаются пустыми —
-        загружаются при раскрытии БД (fallback request_tables)."""
-        return self.database_sizes(host), {}
+        """Размеры всех БД сервера и таблицы по каждой БД.
+
+        Таблицы грузятся параллельно через all_databases_table_sizes —
+        все запросы идут по ключу пула (host, None) с USE [db], поэтому
+        соединений не больше max_per_key, независимо от числа БД.
+        """
+        sizes = self.database_sizes(host)
+
+        try:
+            tables = self.all_databases_table_sizes(host, list(sizes))
+        except Exception:
+            logger.warning(
+                f"{host}: не удалось получить таблицы разом, "
+                "будут загружаться по БД при раскрытии"
+            )
+            tables = {}
+
+        return sizes, tables
+
+    def all_databases_table_sizes(
+        self,
+        host: str,
+        databases: list[str],
+    ) -> dict[str, list[tuple[str, int]]]:
+        """Таблицы для набора БД одной пачкой на общем соединении.
+
+        Каждый запрос выполняется как USE [db]; <sql> по ключу пула
+        (host, None), так что набор БД сервера переиспользует до
+        config.sizes.table_workers соединений вместо одного на БД.
+        """
+        databases = list(databases)
+        if not databases:
+            return {}
+
+        max_workers = max(1, min(config.sizes.table_workers, len(databases)))
+
+        def _fetch(db: str) -> tuple[str, list[tuple[str, int]]]:
+            sql = f"USE [{_escape_bracket(db)}];\n{_TABLE_SIZES_SQL}"
+            rows = self.query(host, sql)
+            return db, [
+                (row["table_name"], int(row["total_bytes"] or 0))
+                for row in rows
+                if row.get("table_name")
+            ]
+
+        results: dict[str, list[tuple[str, int]]] = {}
+
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            for db, table_sizes in ex.map(_fetch, databases):
+                results[db] = table_sizes
+
+        return results
 
     def database_table_sizes(
         self,
         host: str,
         database: str,
     ) -> list[tuple[str, int]]:
-        sql = """
-SELECT
-    CASE WHEN s.name = 'dbo' THEN t.name ELSE s.name + N'.' + t.name END
-        AS table_name,
-    SUM(a.total_pages) * 8 * 1024 AS total_bytes
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.indexes i ON t.object_id = i.object_id
-JOIN sys.partitions p ON i.object_id = p.object_id AND i.index_id = p.index_id
-JOIN sys.allocation_units a ON p.partition_id = a.container_id
-WHERE a.type IN (1, 2)
-GROUP BY s.name, t.name
-ORDER BY total_bytes DESC
-"""
+        sql = _TABLE_SIZES_SQL
         rows = self.query(host, sql, database)
 
         return [

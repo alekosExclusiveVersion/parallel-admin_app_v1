@@ -230,6 +230,35 @@ class ConnectionPool:
         with self._lock:
             return self._idle_count
 
+    @property
+    def active_count(self) -> int:
+        """Число соединений, занятых прямо сейчас (in_use)."""
+        with self._lock:
+            return sum(
+                1
+                for kp in self._entries.values()
+                for pc in kp.conns
+                if pc.in_use
+            )
+
+    @property
+    def slots_available(self) -> int:
+        """Сколько соединений можно ещё занять без превышения
+        глобального потолка max_connections."""
+        return max(0, int(self.cfg.max_connections) - self.active_count)
+
+    def active_by_key(self) -> dict:
+        """Занятость соединений по ключам (host, database) для диагностики."""
+        with self._lock:
+            return {
+                key: {
+                    "in_use": sum(1 for pc in kp.conns if pc.in_use),
+                    "idle": sum(1 for pc in kp.conns if not pc.in_use),
+                    "total": len(kp.conns),
+                }
+                for key, kp in self._entries.items()
+            }
+
     # ----------------------------------------------------------
     # Внутренние хелперы (все под self._lock)
     # ----------------------------------------------------------

@@ -50,6 +50,23 @@ class ParallelConfig:
 
 
 @dataclass(frozen=True)
+class SizesConfig:
+    """Лимиты подсистемы подсчёта размеров БД/таблиц.
+
+    max_connections — максимум одновременных соединений, которые может
+        занять sizes-воркер (мягкий лимит поверх глобального пула);
+    table_workers — параллельность запроса таблиц одной MSSQL-базы
+        (без «взрыва» соединений: всё идёт через ключ (host, None));
+    catalog_ttl — секунды, в течение которых каталог сервера отдаётся
+        из кэша без обращения к БД (0 = кэш выключен).
+    """
+
+    max_connections: int
+    table_workers: int
+    catalog_ttl: int
+
+
+@dataclass(frozen=True)
 class FilterConfig:
     country: str
     country_setting: str
@@ -92,6 +109,7 @@ class Config:
     mysql: MySQLConfig
     mssql: MSSQLConfig
     parallel: ParallelConfig
+    sizes: SizesConfig
     filter: FilterConfig
     logging: LoggingConfig
     output: OutputConfig
@@ -192,6 +210,25 @@ def load_config(config_file: str | Path | None = None) -> Config:
             workers=p.getint("parallel", "workers", fallback=8,),
             database_workers=p.getint("parallel", "database_workers", fallback=4,),
             search_workers=p.getint("parallel", "search_workers", fallback=4,),
+        ),
+        sizes=SizesConfig(
+            max_connections=p.getint(
+                "sizes", "max_connections", fallback=4
+            ),
+            table_workers=p.getint(
+                "sizes",
+                "table_workers",
+                fallback=max(
+                    1,
+                    min(
+                        p.getint(
+                            "parallel", "database_workers", fallback=4
+                        ),
+                        4,
+                    ),
+                ),
+            ),
+            catalog_ttl=p.getint("sizes", "catalog_ttl", fallback=300),
         ),
         filter=FilterConfig(
             country=p.get("filter", "country").lower(),

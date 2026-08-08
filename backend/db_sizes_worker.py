@@ -22,12 +22,17 @@ queued-слоты никогда не вызовутся. Поэтому ожи�
 
 from __future__ import annotations
 
+import logging
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from PySide6.QtCore import QObject, Signal, Slot
 
 from common.config import config
 from common.server_registry import client_for
+
+_logger = logging.getLogger(__name__)
 
 
 class DbSizesWorker(QObject):
@@ -45,6 +50,16 @@ class DbSizesWorker(QObject):
             max_workers=max(1, config.parallel.database_workers),
             thread_name_prefix="sizes",
         )
+        # Мягкий лимит подсистемы размеров: даже при параллельных
+        # check/search размерник не занимает больше соединений, чем
+        # разрешено (config.sizes.max_connections).
+        self._slots = threading.BoundedSemaphore(
+            max(1, config.sizes.max_connections)
+        )
+        # Кэш каталога сервера: {server: (timestamp, sizes, tables)}.
+        # В пределах catalog_ttl refresh_sizes() и раскрытие сервера
+        # не обращаются к БД вообще.
+        self._catalog_cache: dict[str, tuple[float, dict, dict]] = {}
 
     def stop(self):
         self._stop = True
@@ -108,17 +123,54 @@ class DbSizesWorker(QObject):
             return
 
         try:
-            sizes, tables = client_for(server).server_catalog(server)
+            now = time.monotonic()
+            ttl = config.sizes.catalog_ttl
+
+            cached = self._catalog_cache.get(server)
+            if ttl > 0 and cached is not None and now - cached[0] < ttl:
+                # Данные ещё свежие — отдаём из кэша без единого запроса.
+                sizes, tables = cached[1], cached[2]
+                if not self._stop:
+                    self.databases.emit(server, sizes)
+                    self.server_tables.emit(server, tables)
+                return
+
+            with self._slots:
+                if self._stop:
+                    return
+                sizes, tables = client_for(server).server_catalog(server)
+
+            if ttl > 0:
+                self._catalog_cache[server] = (
+                    time.monotonic(),
+                    sizes,
+                    tables,
+                )
+
+            self._log_pool(server, len(sizes))
+
+            if not self._stop:
+                self.databases.emit(server, sizes)
+                self.server_tables.emit(server, tables)
         except Exception as ex:
             if not self._stop:
                 self.error.emit(server, context, str(ex))
-            return
 
-        if self._stop:
-            return
-
-        self.databases.emit(server, sizes)
-        self.server_tables.emit(server, tables)
+    def _log_pool(self, server: str, db_count: int) -> None:
+        """Диагностика: сколько соединений пула занято сейчас."""
+        try:
+            pool = getattr(client_for(server), "_pool", None)
+            if pool is None:
+                return
+            _logger.debug(
+                "%s: каталог %d БД, активных коннектов %d/%d",
+                server,
+                db_count,
+                pool.active_count,
+                int(getattr(pool.cfg, "max_connections", 0) or 0),
+            )
+        except Exception:
+            pass
 
     @Slot(str, str)
     def request_tables(self, server: str, database: str):

@@ -779,13 +779,13 @@ class MainWindow(QWidget):
         self.lbl_search_title.setObjectName("SectionTitle")
         search_top.addWidget(self.lbl_search_title)
 
-        search_top.addStretch()
-
-        self.lbl_search_hint = QLabel(
-            "Двойной клик подставит сервер и БД в консоль"
+        search_top.addWidget(
+            HelpIcon(
+                "Двойной клик подставит сервер и БД в консоль"
+            )
         )
-        self.lbl_search_hint.setObjectName("MutedLabel")
-        search_top.addWidget(self.lbl_search_hint)
+
+        search_top.addStretch()
 
         search_layout.addLayout(search_top)
 
