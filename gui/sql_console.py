@@ -364,9 +364,10 @@ class SqlConsolePanel(QWidget):
     ) -> None:
         """Заполняет выпадающий список серверов.
 
-        Элемент — строка-хост либо пара (display_name, host):
-        отображается Name, host хранится в данных пункта и используется
-        как цель подключения (current_host()).
+        Элемент — строка-хост либо кортеж (display_name, host) или
+        (display_name, host, engine): отображается Name, host хранится
+        в данных пункта и используется как цель подключения
+        (current_host()). Движок не используется — комбо без иконок.
         """
         previous = self.current_host()
 
@@ -376,7 +377,7 @@ class SqlConsolePanel(QWidget):
 
         for entry in servers:
             if isinstance(entry, (tuple, list)):
-                display, host = entry
+                display, host = entry[0], entry[1]
             else:
                 display = host = entry
             self.cb_server.addItem(display, host)

@@ -279,9 +279,10 @@ class MainWindow(QWidget):
         hosts = [spec.host for spec in servers]
 
         # В списках показываем Name (host скрыт), host остаётся
-        # целью подключения для check/search/консоли.
+        # целью подключения для check/search/консоли; engine (mysql/mssql)
+        # нужен дереву для фирменной иконки сервера.
         labels = [
-            (spec.ui_label(), spec.host)
+            (spec.ui_label(), spec.host, spec.engine)
             for spec in servers
         ]
 

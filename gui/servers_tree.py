@@ -3,10 +3,11 @@ gui/servers_tree.py
 
 Дерево серверов → БД → таблиц с ленивой подгрузкой размеров.
 
-Виджет не знает о MySQL: запросы размеров эмитятся сигналами
+Виджет не знает о деталях движков БД: запросы размеров эмитятся сигналами
 (databasesRequested / tablesRequested), а результаты возвращаются
 методами apply_sizes() / apply_tables(). Двойной клик по таблице
-эмитит tableSelectRequested.
+эмитит tableSelectRequested. Единственное знание о движке — строка
+engine ("mysql"/"mssql") в данных узла для выбора фирменной иконки.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ from PySide6.QtWidgets import (
 
 from gui.icons import icon
 
+from common.server_registry import ENGINE_MSSQL, ENGINE_MYSQL
+
 _PLACEHOLDER = "…"
 _LOADING = "Загрузка…"
 _NO_DB = "Нет БД"
@@ -30,6 +33,9 @@ _NO_TABLES = "Нет таблиц"
 # Роль, в которой хранится отображаемое имя сервера (Name или host).
 # В Qt.UserRole всегда остаётся host — по нему работают check/search/консоль.
 _DISPLAY_ROLE = Qt.UserRole + 1
+
+# Движок сервера ("mysql"/"mssql") — для выбора фирменной иконки.
+_ENGINE_ROLE = Qt.UserRole + 2
 
 
 class ServersTree(QTreeWidget):
@@ -153,28 +159,49 @@ class ServersTree(QTreeWidget):
     def set_servers(self, servers: list[str] | list[tuple]) -> None:
         """Заполняет дерево серверами.
 
-        Элемент может быть строкой-хостом либо парой (display_name, host):
-        display_name показывается в списке, host хранится в Qt.UserRole
-        и используется воркерами как цель подключения.
+        Элемент может быть строкой-хостом, парой (display_name, host)
+        либо тройкой (display_name, host, engine): display_name показывается
+        в списке, host хранится в Qt.UserRole и используется воркерами как
+        цель подключения, engine ("mysql"/"mssql") — для фирменной иконки.
         """
         self.clear()
 
         for entry in servers:
             if isinstance(entry, (tuple, list)):
-                display, server = entry
+                display, server = entry[0], entry[1]
+                engine = entry[2] if len(entry) > 2 else ""
             else:
                 display = server = entry
+                engine = ""
 
             item = QTreeWidgetItem([display])
             item.setData(0, Qt.UserRole, server)
             item.setData(0, _DISPLAY_ROLE, display)
+            item.setData(0, _ENGINE_ROLE, engine)
             # Host скрыт из списка, но доступен подсказкой при наведении.
             if server != display:
                 item.setToolTip(0, server)
-            item.setIcon(0, icon("dns", 16, "@icon_accent"))
+            item.setIcon(0, self._server_icon(item))
             # Заглушка-ребёнок, чтобы у сервера появился маркер раскрытия
             QTreeWidgetItem(item, [_PLACEHOLDER])
             self.addTopLevelItem(item)
+
+    def _server_icon_key(self, item) -> str:
+        """Имя иконки для сервера по движку (для тестов)."""
+        engine = item.data(0, _ENGINE_ROLE)
+        if engine == ENGINE_MSSQL:
+            return "mssql"
+        if engine == ENGINE_MYSQL:
+            return "mysql"
+        return "dns"
+
+    def _server_icon(self, item):
+        """Фирменная иконка сервера (цветные логотипы MSSQL/MySQL),
+        для неизвестного движка — стандартная иконка сервера."""
+        key = self._server_icon_key(item)
+        if key in ("mssql", "mysql"):
+            return icon(key, 16)
+        return icon(key, 16, "@icon_accent")
 
     def selected_servers(self) -> list[str]:
         return [
@@ -194,7 +221,7 @@ class ServersTree(QTreeWidget):
         for index in range(self.topLevelItemCount()):
             item = self.topLevelItem(index)
             item.setText(0, self.display_name(item))
-            item.setIcon(0, icon("dns", 16, "@icon_accent"))
+            item.setIcon(0, self._server_icon(item))
             item.takeChildren()
             QTreeWidgetItem(item, [_PLACEHOLDER])
 
@@ -297,7 +324,7 @@ class ServersTree(QTreeWidget):
                 [f"{table_name}  ({self.format_size(table_size)})"],
             )
             table_item.setData(0, Qt.UserRole, table_name)
-            table_item.setIcon(0, icon("grid_on", 16, "@icon_success"))
+            table_item.setIcon(0, icon("table", 16, "@icon_success"))
 
     def apply_tables(self, server: str, database: str, tables: list) -> None:
         for index in range(self.topLevelItemCount()):

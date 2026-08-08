@@ -23,7 +23,7 @@ from PySide6.QtWidgets import QApplication
 import backend.db_sizes_worker as dw
 from common.mysql_client import mysql
 from common.server_registry import registry
-from gui.servers_tree import ServersTree
+from gui.servers_tree import ServersTree, _ENGINE_ROLE
 
 
 class FakeSizesMySQL:
@@ -325,6 +325,43 @@ class TestServersTree(unittest.TestCase):
 
         self.assertEqual(srv.text(0), "db1.example.com")
         self.assertEqual(srv.toolTip(0), "")
+
+    def test_set_servers_stores_engine(self):
+        tree = ServersTree()
+        tree.set_servers([("M", "h1", "mssql")])
+
+        item = tree.topLevelItem(0)
+        self.assertEqual(item.data(0, _ENGINE_ROLE), "mssql")
+
+    def test_set_servers_engine_icon_mssql(self):
+        tree = ServersTree()
+        tree.set_servers([("M", "h1", "mssql")])
+
+        item = tree.topLevelItem(0)
+        self.assertEqual(tree._server_icon_key(item), "mssql")
+
+    def test_set_servers_engine_icon_mysql(self):
+        tree = ServersTree()
+        tree.set_servers([("M", "h1", "mysql")])
+
+        item = tree.topLevelItem(0)
+        self.assertEqual(tree._server_icon_key(item), "mysql")
+
+    def test_set_servers_engine_icon_fallback(self):
+        tree = ServersTree()
+        tree.set_servers([("O", "h1", "oracle"), ("P", "h2")])
+
+        self.assertEqual(tree._server_icon_key(tree.topLevelItem(0)), "dns")
+        self.assertEqual(tree._server_icon_key(tree.topLevelItem(1)), "dns")
+
+    def test_set_servers_reset_sizes_keeps_engine_icon(self):
+        tree = ServersTree()
+        tree.set_servers([("M", "h1", "mssql")])
+
+        item = tree.topLevelItem(0)
+        tree.reset_sizes()
+
+        self.assertEqual(tree._server_icon_key(item), "mssql")
 
     def test_apply_sizes_keeps_display_name(self):
         tree = ServersTree()
