@@ -44,6 +44,7 @@ from common.server_registry import (
 from gui.icons import icon, set_icon_theme
 from gui import styles as theme_styles
 from gui.widgets.collapsible_splitter import CollapsibleSplitter
+from gui.widgets.help_icon import HelpIcon
 from gui.worker_thread import WorkerHost
 from gui.servers_tree import ServersTree
 from gui.result_table import ResultTable
@@ -795,16 +796,15 @@ class MainWindow(QWidget):
         search_row.addWidget(self.lbl_search)
 
         self.ed_search_mask = QLineEdit()
-        self.ed_search_mask.setPlaceholderText(
-            "Название БД, напр. ar_ru"
-        )
         self.ed_search_mask.setClearButtonEnabled(True)
-        self.ed_search_mask.setToolTip(
-            "Поиск по содержимому имени БД. "
-            "Символы % вводить не нужно — поиск выполняется "
-            "как %текст%"
-        )
         search_row.addWidget(self.ed_search_mask, 1)
+
+        search_row.addWidget(
+            HelpIcon(
+                "Поиск по содержимому имени БД. Символы % вводить "
+                "не нужно — поиск выполняется как %текст%"
+            )
+        )
 
         self.btn_search = QPushButton("Найти БД")
         self.btn_search.setObjectName("btn_primary")
@@ -1706,6 +1706,7 @@ class MainWindow(QWidget):
         self.scripts_library.retheme_icons()
         self.panel.retheme()
         self._sync_theme_ui()
+        theme_styles.apply_window_appearance(self.window())
 
     def _sync_theme_ui(self):
         mode = theme_styles.mode()

@@ -29,6 +29,7 @@ from common.sql_splitter import statement_at
 from gui.icons import icon
 from gui.styles import qcolor
 from gui.sql_highlighter import SQLHighlighter
+from gui.widgets.help_icon import HelpIcon
 
 
 class ComboItemDelegate(QStyledItemDelegate):
@@ -257,14 +258,18 @@ class SqlConsolePanel(QWidget):
 
         run_row.addWidget(self.btn_stop)
 
+        run_row.addWidget(
+            HelpIcon(
+                "Cmd/Ctrl+Enter — выполнить выделение или оператор "
+                "под курсором; Cmd/Ctrl+Shift+Enter — выполнить всё."
+            )
+        )
+
         layout.addLayout(run_row)
 
         self.editor = SqlEditor()
         self.editor.setLineWrapMode(QPlainTextEdit.NoWrap)
-        self.editor.setPlaceholderText(
-            "Введите SQL-запрос... Cmd/Ctrl+Enter — выполнить выделение "
-            "или оператор под курсором, Cmd/Ctrl+Shift+Enter — выполнить всё"
-        )
+        self.editor.setPlaceholderText("Введите SQL-запрос…")
         self.editor.setTabStopDistance(40)
 
         console_font = QFontDatabase.systemFont(QFontDatabase.FixedFont)

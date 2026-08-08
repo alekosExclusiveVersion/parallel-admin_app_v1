@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 
 from common.sql_builder import DEFAULT_SCAN_TEMPLATE
 from gui.icons import icon
+from gui.widgets.help_icon import HelpIcon
 
 DATA_DIR = Path.home() / "Library" / "Application Support" / "Parallels SQL Admin"
 SCRIPTS_FILE = DATA_DIR / "scripts.json"
@@ -144,26 +145,32 @@ class ScriptsLibrary(QWidget):
         editor_layout.setContentsMargins(0, 0, 0, 0)
         editor_layout.setSpacing(6)
 
+        name_row = QHBoxLayout()
+        name_row.setSpacing(4)
+        name_row.setContentsMargins(0, 0, 0, 0)
+
         self.lbl_script_name = QLabel("")
         self.lbl_script_name.setObjectName("InlineLabel")
-        editor_layout.addWidget(self.lbl_script_name)
+        name_row.addWidget(self.lbl_script_name)
+        name_row.addStretch()
+        name_row.addWidget(
+            HelpIcon(
+                "Плейсхолдеры: {db} — имя БД без экранирования; "
+                "{dbq} — имя БД в обратных кавычках; "
+                "{table} — таблица настроек; {country} — имя настройки "
+                "страны; {target} — имя целевой настройки."
+            )
+        )
+        editor_layout.addLayout(name_row)
 
         self.editor = QPlainTextEdit()
         self.editor.setLineWrapMode(QPlainTextEdit.NoWrap)
         console_font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
         console_font.setPointSize(12)
         self.editor.setFont(console_font)
-        self.editor.setPlaceholderText(
-            "SQL-шаблон. Плейсхолдеры: {db} {dbq} {table} {country} {target}"
-        )
+        self.editor.setPlaceholderText("SQL-шаблон…")
         self.editor.textChanged.connect(self._on_editor_changed)
         editor_layout.addWidget(self.editor, 1)
-
-        hint = QLabel(
-            "Плейсхолдеры: {db} {dbq} {table} {country} {target}"
-        )
-        hint.setObjectName("MutedLabel")
-        editor_layout.addWidget(hint)
 
         buttons = QHBoxLayout()
         buttons.addStretch()

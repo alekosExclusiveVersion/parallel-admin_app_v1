@@ -12,10 +12,11 @@ gui/styles.py
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtGui import QColor, QGuiApplication, QPalette
 from PySide6.QtWidgets import QApplication
 
 # Цветовые токены светлой темы (Tailwind-подобная палитра slate/blue).
@@ -82,68 +83,69 @@ LIGHT = {
     "log_text": "#0f172a",
 }
 
-# Цветовые токены тёмной темы.
+# Цветовые токены тёмной темы: чисто-чёрный фон, нейтральные серые,
+# синий — только в акцентах и выделении.
 DARK = {
-    "window": "#0f172a",
-    "card": "#1e293b",
-    "card_border": "#334155",
-    "border": "#334155",
-    "border_strong": "#475569",
-    "divider": "#334155",
-    "hover_bg": "#293548",
-    "hover_bg_strong": "#334155",
-    "text": "#f1f5f9",
-    "text_secondary": "#cbd5e1",
-    "text_muted": "#94a3b8",
+    "window": "#000000",
+    "card": "#121212",
+    "card_border": "#2a2a2a",
+    "border": "#232323",
+    "border_strong": "#3d3d3d",
+    "divider": "#1c1c1c",
+    "hover_bg": "#1a1a1a",
+    "hover_bg_strong": "#262626",
+    "text": "#ffffff",
+    "text_secondary": "#cfcfcf",
+    "text_muted": "#8f8f8f",
     "accent": "#3b82f6",
     "accent_hover": "#60a5fa",
     "accent_active": "#2563eb",
     "accent_top": "#60a5fa",
     "accent_bottom": "#3b82f6",
-    "accent_soft": "#17233d",
-    "accent_soft_active": "#1e3a8a",
+    "accent_soft": "#16161a",
+    "accent_soft_active": "#20242e",
     "sel_bg": "#1e3a8a",
     "sel_text": "#ffffff",
     "danger": "#f87171",
     "danger_hover": "#ef4444",
     "danger_active": "#dc2626",
-    "danger_soft": "#2f1416",
-    "danger_soft_active": "#3f1d20",
+    "danger_soft": "#2b1416",
+    "danger_soft_active": "#3d1d20",
     "success": "#4ade80",
     "warning": "#fbbf24",
-    "error_bg": "#3b1212",
-    "header_bg": "#0f172a",
-    "header_border": "#334155",
-    "header_text": "#e2e8f0",
-    "header_hover": "#1e293b",
-    "input_bg": "#111827",
+    "error_bg": "#341316",
+    "header_bg": "#000000",
+    "header_border": "#2a2a2a",
+    "header_text": "#dddddd",
+    "header_hover": "#141414",
+    "input_bg": "#0a0a0a",
     "input_focus": "#3b82f6",
-    "editor_gutter_bg": "#111827",
-    "editor_gutter_border": "#334155",
-    "editor_line_number": "#64748b",
-    "editor_current_line": "#93c5fd",
-    "tooltip_bg": "#f1f5f9",
-    "tooltip_text": "#0f172a",
-    "scrollbar": "#475569",
-    "scrollbar_hover": "#64748b",
-    "icon_fg": "#e2e8f0",
-    "icon_muted": "#94a3b8",
+    "editor_gutter_bg": "#080808",
+    "editor_gutter_border": "#232323",
+    "editor_line_number": "#5c5c5c",
+    "editor_current_line": "#60a5fa",
+    "tooltip_bg": "#e8e8e8",
+    "tooltip_text": "#0a0a0a",
+    "scrollbar": "#3d3d3d",
+    "scrollbar_hover": "#525252",
+    "icon_fg": "#dddddd",
+    "icon_muted": "#8f8f8f",
     "icon_accent": "#60a5fa",
     "icon_secondary": "#c084fc",
     "icon_success": "#4ade80",
     "icon_danger": "#f87171",
-    "alt_base": "#1a2536",
-    "sql_keyword": "#90caf9",
-    "sql_string": "#a5d6a7",
-    "sql_number": "#ffb74d",
-    "sql_comment": "#64748b",
-    "sql_identifier": "#80deea",
+    "alt_base": "#0d0d0d",
+    "sql_keyword": "#60a5fa",
+    "sql_string": "#6ee7a8",
+    "sql_number": "#ffb454",
+    "sql_comment": "#8f8f8f",
+    "sql_identifier": "#67e8f9",
     "log_info": "#60a5fa",
     "log_success": "#4ade80",
     "log_warning": "#fbbf24",
     "log_error": "#f87171",
-    "log_stamp": "#64748b",
-    "log_text": "#cbd5e1",
+    "log_stamp": "#8f8f8f",
+    "log_text": "#cfcfcf",
 }
 
 THEMES = {"light": LIGHT, "dark": DARK}
@@ -254,6 +256,7 @@ def maybe_system_change() -> None:
 def apply_theme(name: str) -> None:
     set_current_theme(name)
     _notify_listeners()
+    apply_window_appearance()
 
 
 def register_theme_listener(fn) -> None:
@@ -272,6 +275,77 @@ def _notify_listeners() -> None:
             fn()
         except Exception:
             pass
+
+
+# ----------------------------------------------------------
+# Нативный заголовок окна (macOS)
+# ----------------------------------------------------------
+
+def apply_window_appearance(window=None) -> None:
+    """Переключает внешность NSWindow (заголовок окна) под тему.
+
+    macOS не связывает тему Qt с темой системного окна автоматически,
+    поэтому вручную выставляем NSWindow.appearance. Вызывать после
+    показа окна или при смене темы."""
+    if sys.platform != "darwin":
+        return
+    if QGuiApplication.platformName() != "cocoa":
+        return
+    try:
+        import ctypes
+        import ctypes.util
+        from PySide6.QtWidgets import QWidget
+
+        lib_path = ctypes.util.find_library("objc") or "/usr/lib/libobjc.dylib"
+        lib = ctypes.CDLL(lib_path)
+        msg = lib.objc_msgSend
+
+        def _cls(name: str):
+            lib.objc_getClass.restype = ctypes.c_void_p
+            lib.objc_getClass.argtypes = [ctypes.c_char_p]
+            return lib.objc_getClass(name.encode())
+
+        def _sel(name: str):
+            lib.sel_registerName.restype = ctypes.c_void_p
+            lib.sel_registerName.argtypes = [ctypes.c_char_p]
+            return lib.sel_registerName(name.encode())
+
+        def _send(receiver, selector, *args, restype=ctypes.c_void_p, argtypes=()):
+            msg.restype = restype
+            msg.argtypes = [ctypes.c_void_p, ctypes.c_void_p] + list(argtypes)
+            return msg(receiver, selector, *args)
+
+        name = "NSAppearanceNameDarkAqua" if current_theme() == "dark" else "NSAppearanceNameAqua"
+        nsstring = _send(
+            _cls("NSString"), _sel("stringWithUTF8String:"),
+            ctypes.c_char_p(name.encode()),
+            restype=ctypes.c_void_p, argtypes=[ctypes.c_char_p],
+        )
+        appearance = _send(
+            _cls("NSAppearance"), _sel("appearanceNamed:"), nsstring,
+            restype=ctypes.c_void_p, argtypes=[ctypes.c_void_p],
+        )
+        if not appearance:
+            return
+
+        targets = [window] if window is not None else []
+        if not targets:
+            app = QApplication.instance()
+            if app is not None:
+                targets = [w for w in app.topLevelWidgets() if w is not None and w.isWindow()]
+        for w in targets:
+            try:
+                wid = int(w.winId())
+                if not wid:
+                    continue
+                view = ctypes.c_void_p(wid)
+            except Exception:
+                continue
+            nswindow = _send(view, _sel("window"))
+            if nswindow:
+                _send(nswindow, _sel("setAppearance:"), appearance, argtypes=[ctypes.c_void_p])
+    except Exception:
+        pass
 
 
 # ----------------------------------------------------------
@@ -365,7 +439,7 @@ QLineEdit#SearchField:focus{
 /* --- Status bar (full-bleed; тёмная в обеих темах) --- */
 QFrame#StatusBar{
     background:qlineargradient(x1:0,y1:0,x2:0,y2:1,
-        stop:0 #1e293b, stop:1 #0f172a);
+        stop:0 #232323, stop:1 #000000);
     border:none;
     border-radius:0;
 }
@@ -626,6 +700,23 @@ QPushButton#btn_danger:disabled{
     color:{text_muted};
 }
 
+/* --- Help icon («?» в кружочке) --- */
+QToolButton#HelpIcon{
+    border:1px solid {border};
+    border-radius:9px;
+    background:{card};
+    color:{text_muted};
+    font-size:11px;
+    font-weight:700;
+    padding:0;
+}
+
+QToolButton#HelpIcon:hover{
+    border-color:{accent};
+    background:{accent_soft};
+    color:{accent};
+}
+
 /* --- Checkbox --- */
 QCheckBox{
     font-size:13px;
@@ -865,13 +956,6 @@ QLabel#DialogTitle{
     font-size:15px;
     font-weight:700;
     color:{text};
-}
-
-QLabel#DialogHint{
-    font-size:12px;
-    color:{text_muted};
-    border:none;
-    background:transparent;
 }
 """
     for key, value in c.items():

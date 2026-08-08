@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QVBoxLayout,
+    QWidget,
 )
 
 from PySide6.QtCore import QObject, Signal
@@ -34,6 +35,7 @@ from common.server_registry import (
     default_port,
 )
 from gui import styles as theme_styles
+from gui.widgets.help_icon import HelpIcon
 from gui.worker_thread import WorkerHost
 
 
@@ -81,12 +83,28 @@ class ServerDialog(QDialog):
 
         theme_styles.register_theme_listener(self._refresh_theme)
 
+        theme_styles.apply_window_appearance(self)
+
     # ----------------------------------------------------------
     # UI
     # ----------------------------------------------------------
 
     def _refresh_theme(self) -> None:
         self.setStyleSheet(theme_styles.dialog_stylesheet())
+        theme_styles.apply_window_appearance(self)
+
+    def _field_label(self, text: str, help_text: str = "") -> QWidget:
+        """Лейбл поля формы; при наличии help_text — с иконкой «?»."""
+        row = QHBoxLayout()
+        row.setSpacing(4)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(QLabel(text))
+        if help_text:
+            row.addWidget(HelpIcon(help_text))
+        row.addStretch()
+        container = QWidget()
+        container.setLayout(row)
+        return container
 
     def _build_ui(self) -> None:
         self.setStyleSheet(theme_styles.dialog_stylesheet())
@@ -102,12 +120,20 @@ class ServerDialog(QDialog):
         form = QFormLayout()
 
         self.ed_name = QLineEdit()
-        self.ed_name.setPlaceholderText("необязательно")
-        form.addRow("Имя:", self.ed_name)
+        form.addRow(
+            self._field_label(
+                "Имя:",
+                "Необязательно. Если не заполнено, в списке "
+                "отображается хост.",
+            ),
+            self.ed_name,
+        )
 
         self.ed_host = QLineEdit()
-        self.ed_host.setPlaceholderText("напр. db.example.com")
-        form.addRow("Хост:", self.ed_host)
+        form.addRow(
+            self._field_label("Хост:", "Пример: db.example.com"),
+            self.ed_host,
+        )
 
         self.cb_engine = QComboBox()
         self.cb_engine.addItem("MySQL", ENGINE_MYSQL)
@@ -131,13 +157,6 @@ class ServerDialog(QDialog):
         form.addRow("Пароль:", password_row)
 
         layout.addLayout(form)
-
-        hint = QLabel(
-            "Пустой пароль — используется глобальный по умолчанию "
-            "из config.ini."
-        )
-        hint.setObjectName("DialogHint")
-        layout.addWidget(hint)
 
         buttons = QHBoxLayout()
 
