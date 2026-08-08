@@ -351,8 +351,8 @@ class TestServersTree(unittest.TestCase):
         tree = ServersTree()
         tree.set_servers([("O", "h1", "oracle"), ("P", "h2")])
 
-        self.assertEqual(tree._server_icon_key(tree.topLevelItem(0)), "dns")
-        self.assertEqual(tree._server_icon_key(tree.topLevelItem(1)), "dns")
+        self.assertEqual(tree._server_icon_key(tree.topLevelItem(0)), "server")
+        self.assertEqual(tree._server_icon_key(tree.topLevelItem(1)), "server")
 
     def test_set_servers_reset_sizes_keeps_engine_icon(self):
         tree = ServersTree()
@@ -362,6 +362,34 @@ class TestServersTree(unittest.TestCase):
         tree.reset_sizes()
 
         self.assertEqual(tree._server_icon_key(item), "mssql")
+
+    def test_retheme_icons_keeps_server_engine_key(self):
+        tree = ServersTree()
+        tree.set_servers([
+            ("MySQL", "h1", "mysql"),
+            ("MSSQL", "h2", "mssql"),
+            ("Oracle", "h3", "oracle"),
+        ])
+        tree.apply_databases("h1", ["db_a"])
+        tree.apply_server_tables("h1", {"db_a": [("t1", 100)]})
+
+        def find(text):
+            for i in range(tree.topLevelItemCount()):
+                if tree.topLevelItem(i).text(0) == text:
+                    return tree.topLevelItem(i)
+            self.fail(f"узел {text} не найден")
+
+        mysql, mssql, oracle = find("MySQL"), find("MSSQL"), find("Oracle")
+        mysql.setExpanded(True)
+        mysql.child(0).setExpanded(True)
+
+        tree.retheme_icons()
+
+        self.assertEqual(tree._server_icon_key(mysql), "mysql")
+        self.assertEqual(tree._server_icon_key(mssql), "mssql")
+        self.assertEqual(tree._server_icon_key(oracle), "server")
+        self.assertFalse(mysql.icon(0).isNull())
+        self.assertFalse(mysql.child(0).icon(0).isNull())
 
     def test_apply_sizes_keeps_display_name(self):
         tree = ServersTree()

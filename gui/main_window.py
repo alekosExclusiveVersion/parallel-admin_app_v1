@@ -1704,6 +1704,7 @@ class MainWindow(QWidget):
         self.setStyleSheet(theme_styles.build_stylesheet())
         set_icon_theme(theme_styles.theme_colors())
         self._refresh_icons()
+        self.servers_tree.retheme_icons()
         self.scripts_library.retheme_icons()
         self.panel.retheme()
         self._sync_theme_ui()

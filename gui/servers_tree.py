@@ -37,6 +37,13 @@ _DISPLAY_ROLE = Qt.UserRole + 1
 # Движок сервера ("mysql"/"mssql") — для выбора фирменной иконки.
 _ENGINE_ROLE = Qt.UserRole + 2
 
+# Фирменные цвета движков — токены темы (styles.py), чтобы иконка
+# оставалась читаемой и на светлой, и на тёмной теме.
+_ENGINE_ICON_COLORS = {
+    ENGINE_MYSQL: "@mysql_brand",
+    ENGINE_MSSQL: "@mssql_brand",
+}
+
 
 class ServersTree(QTreeWidget):
     databasesRequested = Signal(list)        # серверы, для которых нужны размеры БД
@@ -193,15 +200,31 @@ class ServersTree(QTreeWidget):
             return "mssql"
         if engine == ENGINE_MYSQL:
             return "mysql"
-        return "dns"
+        return "server"
 
     def _server_icon(self, item):
-        """Фирменная иконка сервера (цветные логотипы MSSQL/MySQL),
-        для неизвестного движка — стандартная иконка сервера."""
-        key = self._server_icon_key(item)
-        if key in ("mssql", "mysql"):
-            return icon(key, 16)
-        return icon(key, 16, "@icon_accent")
+        """Иконка сервера — серверный шкаф в фирменном цвете движка:
+        MySQL — синий, MSSQL — красный (токены темы, светлее на тёмной),
+        для неизвестного движка — акцент темы."""
+        engine = item.data(0, _ENGINE_ROLE)
+        color = _ENGINE_ICON_COLORS.get(engine, "@icon_accent")
+        return icon("server", 20, color)
+
+    def retheme_icons(self) -> None:
+        """Перерисовывает иконки дерева под текущую тему (после смены
+        палитры): серверы, БД и таблицы используют токены темы."""
+        for i in range(self.topLevelItemCount()):
+            srv = self.topLevelItem(i)
+            srv.setIcon(0, self._server_icon(srv))
+            for d in range(srv.childCount()):
+                db = srv.child(d)
+                if not self.db_name(db):
+                    continue
+                db.setIcon(0, icon("storage", 22, "@icon_secondary"))
+                for t in range(db.childCount()):
+                    table = db.child(t)
+                    if self.table_name(table):
+                        table.setIcon(0, icon("table", 22, "@icon_success"))
 
     def selected_servers(self) -> list[str]:
         return [
@@ -243,7 +266,7 @@ class ServersTree(QTreeWidget):
             for db_name in names:
                 db_item = QTreeWidgetItem(server_item, [db_name])
                 db_item.setData(0, Qt.UserRole, db_name)
-                db_item.setIcon(0, icon("storage", 16, "@icon_secondary"))
+                db_item.setIcon(0, icon("storage", 22, "@icon_secondary"))
                 QTreeWidgetItem(db_item, [_PLACEHOLDER])
             break
 
@@ -286,7 +309,7 @@ class ServersTree(QTreeWidget):
                         [f"{db_name}  ({self.format_size(db_size)})"],
                     )
                     db_item.setData(0, Qt.UserRole, db_name)
-                    db_item.setIcon(0, icon("storage", 16, "@icon_secondary"))
+                    db_item.setIcon(0, icon("storage", 22, "@icon_secondary"))
                     QTreeWidgetItem(db_item, [_PLACEHOLDER])
                 break
 
@@ -324,7 +347,7 @@ class ServersTree(QTreeWidget):
                 [f"{table_name}  ({self.format_size(table_size)})"],
             )
             table_item.setData(0, Qt.UserRole, table_name)
-            table_item.setIcon(0, icon("table", 16, "@icon_success"))
+            table_item.setIcon(0, icon("table", 22, "@icon_success"))
 
     def apply_tables(self, server: str, database: str, tables: list) -> None:
         for index in range(self.topLevelItemCount()):

@@ -65,10 +65,13 @@ LIGHT = {
     "scrollbar_hover": "#94a3b8",
     "icon_fg": "#0f172a",
     "icon_muted": "#475569",
-    "icon_accent": "#2563eb",
-    "icon_secondary": "#7c3aed",
-    "icon_success": "#16a34a",
+    "icon_accent": "#1d4ed8",
+    "icon_secondary": "#6d28d9",
+    "icon_success": "#15803d",
     "icon_danger": "#dc2626",
+    # Фирменные цвета движков БД (официальные, на светлом фоне).
+    "mysql_brand": "#3b6d99",
+    "mssql_brand": "#b91c1c",
     "alt_base": "#f8fafc",
     "sql_keyword": "#1565c0",
     "sql_string": "#2e7d32",
@@ -134,6 +137,10 @@ DARK = {
     "icon_secondary": "#c084fc",
     "icon_success": "#4ade80",
     "icon_danger": "#f87171",
+    # Фирменные цвета движков БД (светлее официальных, чтобы были
+    # читаемы на чисто-чёрном фоне тёмной темы).
+    "mysql_brand": "#6ea5c9",
+    "mssql_brand": "#e0645f",
     "alt_base": "#0d0d0d",
     "sql_keyword": "#60a5fa",
     "sql_string": "#6ee7a8",
