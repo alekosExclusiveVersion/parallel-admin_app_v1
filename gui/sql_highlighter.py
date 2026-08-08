@@ -7,11 +7,12 @@ gui/sql_highlighter.py
 import re
 
 from PySide6.QtGui import (
-    QColor,
     QFont,
     QSyntaxHighlighter,
     QTextCharFormat,
 )
+
+from gui.styles import qcolor
 
 
 KEYWORDS = [
@@ -49,21 +50,27 @@ class SQLHighlighter(QSyntaxHighlighter):
         super().__init__(document)
 
         self._keyword_format = QTextCharFormat()
-        self._keyword_format.setForeground(QColor("#1565c0"))
         self._keyword_format.setFontWeight(QFont.Bold)
 
         self._string_format = QTextCharFormat()
-        self._string_format.setForeground(QColor("#2e7d32"))
 
         self._number_format = QTextCharFormat()
-        self._number_format.setForeground(QColor("#ef6c00"))
 
         self._comment_format = QTextCharFormat()
-        self._comment_format.setForeground(QColor("#7f8c8d"))
         self._comment_format.setFontItalic(True)
 
         self._identifier_format = QTextCharFormat()
-        self._identifier_format.setForeground(QColor("#00838f"))
+
+        self.retheme()
+
+    def retheme(self):
+        """Перекрашивает форматы в цвета текущей темы."""
+        self._keyword_format.setForeground(qcolor("sql_keyword"))
+        self._string_format.setForeground(qcolor("sql_string"))
+        self._number_format.setForeground(qcolor("sql_number"))
+        self._comment_format.setForeground(qcolor("sql_comment"))
+        self._identifier_format.setForeground(qcolor("sql_identifier"))
+        self.rehighlight()
 
     def highlightBlock(self, text):
 

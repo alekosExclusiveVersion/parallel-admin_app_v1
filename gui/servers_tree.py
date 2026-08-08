@@ -171,7 +171,7 @@ class ServersTree(QTreeWidget):
             # Host скрыт из списка, но доступен подсказкой при наведении.
             if server != display:
                 item.setToolTip(0, server)
-            item.setIcon(0, icon("dns", 16, "#2563eb"))
+            item.setIcon(0, icon("dns", 16, "@icon_accent"))
             # Заглушка-ребёнок, чтобы у сервера появился маркер раскрытия
             QTreeWidgetItem(item, [_PLACEHOLDER])
             self.addTopLevelItem(item)
@@ -194,7 +194,7 @@ class ServersTree(QTreeWidget):
         for index in range(self.topLevelItemCount()):
             item = self.topLevelItem(index)
             item.setText(0, self.display_name(item))
-            item.setIcon(0, icon("dns", 16, "#2563eb"))
+            item.setIcon(0, icon("dns", 16, "@icon_accent"))
             item.takeChildren()
             QTreeWidgetItem(item, [_PLACEHOLDER])
 
@@ -216,7 +216,7 @@ class ServersTree(QTreeWidget):
             for db_name in names:
                 db_item = QTreeWidgetItem(server_item, [db_name])
                 db_item.setData(0, Qt.UserRole, db_name)
-                db_item.setIcon(0, icon("storage", 16, "#7c3aed"))
+                db_item.setIcon(0, icon("storage", 16, "@icon_secondary"))
                 QTreeWidgetItem(db_item, [_PLACEHOLDER])
             break
 
@@ -259,7 +259,7 @@ class ServersTree(QTreeWidget):
                         [f"{db_name}  ({self.format_size(db_size)})"],
                     )
                     db_item.setData(0, Qt.UserRole, db_name)
-                    db_item.setIcon(0, icon("storage", 16, "#7c3aed"))
+                    db_item.setIcon(0, icon("storage", 16, "@icon_secondary"))
                     QTreeWidgetItem(db_item, [_PLACEHOLDER])
                 break
 
@@ -297,7 +297,7 @@ class ServersTree(QTreeWidget):
                 [f"{table_name}  ({self.format_size(table_size)})"],
             )
             table_item.setData(0, Qt.UserRole, table_name)
-            table_item.setIcon(0, icon("grid_on", 16, "#16a34a"))
+            table_item.setIcon(0, icon("grid_on", 16, "@icon_success"))
 
     def apply_tables(self, server: str, database: str, tables: list) -> None:
         for index in range(self.topLevelItemCount()):
@@ -399,7 +399,7 @@ class ServersTree(QTreeWidget):
 
         item = self.itemAt(pos)
 
-        action_add = menu.addAction(icon("add", 16, "#2563eb"), "Добавить сервер")
+        action_add = menu.addAction(icon("add", 16, "@icon_accent"), "Добавить сервер")
         action_add.triggered.connect(self.addServerRequested)
 
         if item is not None and self.is_server_item(item):
@@ -407,7 +407,7 @@ class ServersTree(QTreeWidget):
             label = self.display_name(item)
 
             action_edit = menu.addAction(
-                icon("edit", 16, "#475569"),
+                icon("edit", 16, "@icon_muted"),
                 f"Изменить «{label}»",
             )
             action_edit.triggered.connect(
@@ -415,7 +415,7 @@ class ServersTree(QTreeWidget):
             )
 
             action_remove = menu.addAction(
-                icon("delete_outline", 16, "#dc2626"),
+                icon("delete_outline", 16, "@icon_danger"),
                 f"Удалить «{label}»",
             )
             action_remove.triggered.connect(

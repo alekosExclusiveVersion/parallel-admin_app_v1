@@ -33,7 +33,7 @@ from common.server_registry import (
     ServerSpec,
     default_port,
 )
-from gui.styles import LOGIN_DIALOG_STYLESHEET
+from gui import styles as theme_styles
 from gui.worker_thread import WorkerHost
 
 
@@ -79,12 +79,17 @@ class ServerDialog(QDialog):
         if spec is not None:
             self._load_spec(spec)
 
+        theme_styles.register_theme_listener(self._refresh_theme)
+
     # ----------------------------------------------------------
     # UI
     # ----------------------------------------------------------
 
+    def _refresh_theme(self) -> None:
+        self.setStyleSheet(theme_styles.dialog_stylesheet())
+
     def _build_ui(self) -> None:
-        self.setStyleSheet(LOGIN_DIALOG_STYLESHEET)
+        self.setStyleSheet(theme_styles.dialog_stylesheet())
 
         layout = QVBoxLayout(self)
 
@@ -131,9 +136,7 @@ class ServerDialog(QDialog):
             "Пустой пароль — используется глобальный по умолчанию "
             "из config.ini."
         )
-        hint.setStyleSheet(
-            "border:none;background:transparent;color:#64748b;"
-        )
+        hint.setObjectName("DialogHint")
         layout.addWidget(hint)
 
         buttons = QHBoxLayout()

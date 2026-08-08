@@ -11,7 +11,7 @@ gui/sql_console.py
 from __future__ import annotations
 
 from PySide6.QtCore import QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFontDatabase, QKeySequence, QPainter, QShortcut
+from PySide6.QtGui import QFontDatabase, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from common.sql_splitter import statement_at
 from gui.icons import icon
+from gui.styles import qcolor
 from gui.sql_highlighter import SQLHighlighter
 
 
@@ -91,10 +92,15 @@ class SqlEditor(QPlainTextEdit):
             QRect(cr.left(), cr.top(), self.line_number_area_width(), cr.height()),
         )
 
+    def retheme(self) -> None:
+        """Перекрашивает полосу номеров строк при смене темы."""
+        self.viewport().update()
+        self._line_number_area.update()
+
     def line_number_area_paint_event(self, event) -> None:
         painter = QPainter(self._line_number_area)
-        painter.fillRect(event.rect(), QColor("#f8fafc"))
-        painter.setPen(QColor("#e3e8ef"))
+        painter.fillRect(event.rect(), qcolor("editor_gutter_bg"))
+        painter.setPen(qcolor("editor_gutter_border"))
         x = self._line_number_area.width() - 1
         painter.drawLine(x, event.rect().top(), x, event.rect().bottom())
 
@@ -111,12 +117,12 @@ class SqlEditor(QPlainTextEdit):
             if block.isVisible() and bottom >= event.rect().top():
                 number = str(block_number + 1)
                 if block_number == current:
-                    painter.setPen(QColor("#2563eb"))
+                    painter.setPen(qcolor("editor_current_line"))
                     font = painter.font()
                     font.setBold(True)
                     painter.setFont(font)
                 else:
-                    painter.setPen(QColor("#94a3b8"))
+                    painter.setPen(qcolor("editor_line_number"))
                 painter.drawText(
                     0, top, width, self.fontMetrics().height(),
                     Qt.AlignRight, number,
@@ -405,6 +411,11 @@ class SqlConsolePanel(QWidget):
 
     def all_databases_checked(self) -> bool:
         return self.chk_all_databases.isChecked()
+
+    def retheme(self) -> None:
+        """Перекрашивает редактор и подсветку при смене темы."""
+        self.highlighter.retheme()
+        self.editor.retheme()
 
     def script_text(self) -> str:
         return self.editor.toPlainText()

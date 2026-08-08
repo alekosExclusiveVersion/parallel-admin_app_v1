@@ -4,8 +4,8 @@ import threading
 import time
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QSize, QTimer
-from PySide6.QtGui import QAction, QTextCursor
+from PySide6.QtCore import QEvent, Qt, QSize, QTimer
+from PySide6.QtGui import QAction, QActionGroup, QTextCursor
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QTabWidget,
+    QMenu,
+    QApplication,
 )
 
 from backend.repository import Repository
@@ -40,8 +42,8 @@ from common.server_registry import (
     build_select_sql,
     registry,
 )
-from gui.icons import icon
-from gui.styles import SHARED_STYLESHEET
+from gui.icons import icon, set_icon_theme
+from gui import styles as theme_styles
 from gui.widgets.collapsible_splitter import CollapsibleSplitter
 from gui.worker_thread import WorkerHost
 from gui.servers_tree import ServersTree
@@ -59,12 +61,24 @@ class MainWindow(QWidget):
 
         self._last_sql_request = None   # (targets, sql) последнего запроса SQL Console
 
+        theme_styles.bootstrap()
+        set_icon_theme(theme_styles.theme_colors())
+
         self._build_ui()
         self._create_backend()
         self._create_query_backend()
         self._create_export_backend()
         self._create_search_backend()
         self._create_sizes_backend()
+
+        theme_styles.register_theme_listener(self._on_theme_applied)
+
+        self._theme_timer = QTimer(self)
+        self._theme_timer.setInterval(5000)
+        self._theme_timer.timeout.connect(theme_styles.maybe_system_change)
+        self._theme_timer.start()
+
+        self._on_theme_applied()
 
         self._load_servers()
 
@@ -490,7 +504,7 @@ class MainWindow(QWidget):
     def _build_ui(self):
         self.setObjectName("MainWindow")
 
-        self.setStyleSheet(SHARED_STYLESHEET)
+        self.setStyleSheet(theme_styles.build_stylesheet())
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -508,27 +522,27 @@ class MainWindow(QWidget):
         )
 
         self.action_refresh = QAction(
-            icon("refresh", 20, "#0f172a"),
+            icon("refresh", 20, "@icon_fg"),
             "Обновить",
             self,
         )
         self.action_check = QAction(
-            icon("play_arrow", 20, "#0f172a"),
+            icon("play_arrow", 20, "@icon_fg"),
             "Проверка",
             self,
         )
         self.action_update = QAction(
-            icon("edit", 20, "#0f172a"),
+            icon("edit", 20, "@icon_fg"),
             "Изменить",
             self,
         )
         self.action_verify = QAction(
-            icon("check_circle", 20, "#0f172a"),
+            icon("check_circle", 20, "@icon_fg"),
             "Проверить",
             self,
         )
         self.action_stop = QAction(
-            icon("stop", 20, "#0f172a"),
+            icon("stop", 20, "@icon_fg"),
             "Стоп",
             self,
         )
@@ -619,6 +633,9 @@ class MainWindow(QWidget):
 
         status_layout.addWidget(self.progress)
 
+        self._build_theme_toggle()
+        status_layout.addWidget(self.btn_theme)
+
         body_splitter = CollapsibleSplitter(Qt.Horizontal)
         body_splitter.setHandleWidth(10)
         body_splitter.sectionDoubleClicked.connect(
@@ -651,7 +668,7 @@ class MainWindow(QWidget):
 
         self.btn_add_server = QToolButton()
         self.btn_add_server.setObjectName("btn_icon")
-        self.btn_add_server.setIcon(icon("add", 16, "#2563eb"))
+        self.btn_add_server.setIcon(icon("add", 16, "@icon_accent"))
         self.btn_add_server.setIconSize(QSize(16, 16))
         self.btn_add_server.setToolTip("Добавить сервер")
         self.btn_add_server.clicked.connect(self._add_server)
@@ -840,9 +857,7 @@ class MainWindow(QWidget):
         self.lbl_search_hint = QLabel(
             "Двойной клик подставит сервер и БД в консоль"
         )
-        self.lbl_search_hint.setStyleSheet(
-            "border:none;background:transparent;color:#64748b;"
-        )
+        self.lbl_search_hint.setObjectName("MutedLabel")
         search_top.addWidget(self.lbl_search_hint)
 
         search_layout.addLayout(search_top)
@@ -850,9 +865,7 @@ class MainWindow(QWidget):
         search_row = QHBoxLayout()
 
         self.lbl_search = QLabel("Маска:")
-        self.lbl_search.setStyleSheet(
-            "border:none;background:transparent;color:#0f172a;"
-        )
+        self.lbl_search.setObjectName("InlineLabel")
         search_row.addWidget(self.lbl_search)
 
         self.ed_search_mask = QLineEdit()
@@ -1120,20 +1133,21 @@ class MainWindow(QWidget):
     def append_log(self, level: str, message: str):
 
         colors = {
-            "INFO": "#2563eb",
-            "SUCCESS": "#16a34a",
-            "WARNING": "#d97706",
-            "ERROR": "#dc2626",
+            "INFO": theme_styles.color("log_info"),
+            "SUCCESS": theme_styles.color("log_success"),
+            "WARNING": theme_styles.color("log_warning"),
+            "ERROR": theme_styles.color("log_error"),
         }
 
-        color = colors.get(level.upper(), "#0f172a")
+        color = colors.get(level.upper(), theme_styles.color("log_text"))
 
         stamp = datetime.now().strftime(
             "%Y-%m-%d %H:%M:%S"
         )
 
         self.log.append(
-            f'<span style="color:#94a3b8;">{stamp}</span> '
+            f'<span style="color:{theme_styles.color("log_stamp")};">'
+            f'{stamp}</span> '
             f'<span style="color:{color};"><b>[{level.upper()}]</b></span> '
             f'{message}'
         )
@@ -1711,6 +1725,8 @@ class MainWindow(QWidget):
 
     def shutdown(self):
         """Останавливает все фоновые потоки (вызывается из App.closeEvent)."""
+        self._theme_timer.stop()
+        theme_styles.unregister_theme_listener(self._on_theme_applied)
         self.worker.stop()
         self.query_worker.stop()
         self.search_worker.stop()
@@ -1739,6 +1755,81 @@ class MainWindow(QWidget):
                     thr.wait()
 
         mysql.close_all()
+
+    def event(self, e):
+        if e.type() == QEvent.ApplicationPaletteChange:
+            theme_styles.maybe_system_change()
+        return super().event(e)
+
+    def _build_theme_toggle(self):
+        self.btn_theme = QToolButton()
+        self.btn_theme.setObjectName("ThemeToggle")
+        self.btn_theme.setPopupMode(QToolButton.InstantPopup)
+        self.btn_theme.setIconSize(QSize(16, 16))
+        self.btn_theme.setCursor(Qt.PointingHandCursor)
+
+        self._theme_menu = QMenu(self)
+        self._theme_group = QActionGroup(self)
+        self._theme_group.setExclusive(True)
+        self._mode_actions = {}
+        for mode, label, tip in (
+            ("auto", "Авто (по системе)", "Следовать за темой macOS"),
+            ("light", "Светлая", "Светлая тема"),
+            ("dark", "Тёмная", "Тёмная тема"),
+        ):
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setToolTip(tip)
+            action.triggered.connect(
+                lambda checked=False, m=mode: self._on_theme_mode(m)
+            )
+            self._theme_group.addAction(action)
+            self._theme_menu.addAction(action)
+            self._mode_actions[mode] = action
+        self.btn_theme.setMenu(self._theme_menu)
+
+    def _on_theme_mode(self, mode: str):
+        theme_styles.set_mode(mode)
+
+    def _on_theme_applied(self):
+        app = QApplication.instance()
+        if app is not None:
+            app.setPalette(theme_styles.build_palette())
+        self.setStyleSheet(theme_styles.build_stylesheet())
+        set_icon_theme(theme_styles.theme_colors())
+        self._refresh_icons()
+        self.panel.retheme()
+        self._sync_theme_ui()
+
+    def _sync_theme_ui(self):
+        mode = theme_styles.mode()
+        for mode_name, action in self._mode_actions.items():
+            action.setChecked(mode_name == mode)
+        theme = theme_styles.current_theme()
+        mode_icon = {
+            "auto": "auto_mode",
+            "light": "light_mode",
+            "dark": "dark_mode",
+        }[mode]
+        self.btn_theme.setIcon(icon(mode_icon, 16, "#f8fafc"))
+        self.btn_theme.setToolTip(
+            f"Тема: {theme} ({mode})\nАвто — следовать за системой"
+        )
+
+    def _refresh_icons(self):
+        self.action_refresh.setIcon(icon("refresh", 20, "@icon_fg"))
+        self.action_check.setIcon(icon("play_arrow", 20, "@icon_fg"))
+        self.action_update.setIcon(icon("edit", 20, "@icon_fg"))
+        self.action_verify.setIcon(icon("check_circle", 20, "@icon_fg"))
+        self.action_stop.setIcon(icon("stop", 20, "@icon_fg"))
+        self.btn_add_server.setIcon(icon("add", 16, "@icon_accent"))
+        self.btn_select_all.setIcon(icon("done_all"))
+        self.btn_clear.setIcon(icon("close"))
+        self.btn_invert.setIcon(icon("swap_horiz"))
+        self.btn_export_all.setIcon(icon("download"))
+        self.btn_log_clear.setIcon(icon("delete_outline"))
+        self.btn_log_copy.setIcon(icon("content_copy"))
+        self.btn_log_save.setIcon(icon("download"))
 
     def closeEvent(self, event):
         self.shutdown()

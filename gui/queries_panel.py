@@ -73,9 +73,7 @@ class QueriesPanel(QWidget):
         hint = QLabel(
             "Плейсхолдеры: {db} {dbq} {table} {country} {target}"
         )
-        hint.setStyleSheet(
-            "color:#94a3b8;font-size:12px;"
-        )
+        hint.setObjectName("MutedLabel")
 
         layout.addWidget(hint)
 
