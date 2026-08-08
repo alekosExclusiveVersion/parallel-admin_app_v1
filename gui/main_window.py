@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QFrame,
     QFileDialog,
-    QToolBar,
     QToolButton,
     QProgressBar,
     QLineEdit,
@@ -49,7 +48,7 @@ from gui.worker_thread import WorkerHost
 from gui.servers_tree import ServersTree
 from gui.result_table import ResultTable
 from gui.sql_console import SqlConsolePanel
-from gui.queries_panel import QueriesPanel
+from gui.scripts_library import ScriptsLibrary
 from gui.server_dialog import ServerDialog
 
 
@@ -117,16 +116,6 @@ class MainWindow(QWidget):
 
         self.worker.query.connect(
             self._append_query
-        )
-
-        self.action_check.triggered.connect(
-            self._run_check
-        )
-        self.action_stop.triggered.connect(
-            self._stop_check
-        )
-        self.action_refresh.triggered.connect(
-            self._refresh_servers
         )
 
     def _create_query_backend(self):
@@ -433,28 +422,9 @@ class MainWindow(QWidget):
 
         self.thread.start()
 
-    def _stop_check(self):
-
-        if not self.thread.isRunning():
-            return
-
-        self.worker.stop()
-
-        self.action_stop.setEnabled(False)
-
-        self.lbl_status_value.setText(
-            "Остановка..."
-        )
-
-        self.append_log(
-            "WARNING",
-            "Stop requested by user.",
-        )
-
     def _check_started(self):
 
-        self.action_check.setEnabled(False)
-        self.action_stop.setEnabled(True)
+        self.scripts_library.set_running(True)
 
         self.lbl_status_value.setText("Проверка...")
 
@@ -468,9 +438,7 @@ class MainWindow(QWidget):
 
     def _check_finished(self):
 
-        self.action_check.setEnabled(True)
-
-        self.action_stop.setEnabled(False)
+        self.scripts_library.set_running(False)
 
         self.table.setSortingEnabled(True)
 
@@ -514,55 +482,6 @@ class MainWindow(QWidget):
         content = QVBoxLayout(content_widget)
         content.setContentsMargins(8, 8, 8, 0)
         content.setSpacing(6)
-
-        self.toolbar = QToolBar()
-        self.toolbar.setIconSize(QSize(20, 20))
-        self.toolbar.setToolButtonStyle(
-            Qt.ToolButtonTextBesideIcon
-        )
-
-        self.action_refresh = QAction(
-            icon("refresh", 20, "@icon_fg"),
-            "Обновить",
-            self,
-        )
-        self.action_check = QAction(
-            icon("play_arrow", 20, "@icon_fg"),
-            "Проверка",
-            self,
-        )
-        self.action_update = QAction(
-            icon("edit", 20, "@icon_fg"),
-            "Изменить",
-            self,
-        )
-        self.action_verify = QAction(
-            icon("check_circle", 20, "@icon_fg"),
-            "Проверить",
-            self,
-        )
-        self.action_stop = QAction(
-            icon("stop", 20, "@icon_fg"),
-            "Стоп",
-            self,
-        )
-        self.action_refresh.setToolTip("Обновить список серверов")
-        self.action_check.setToolTip("Запустить проверку")
-        self.action_update.setToolTip("Изменить сервер")
-        self.action_verify.setToolTip("Проверить")
-        self.action_stop.setToolTip("Остановить")
-
-        self.action_update.setEnabled(False)
-        self.action_verify.setEnabled(False)
-        self.action_stop.setEnabled(False)
-
-        self.toolbar.addAction(self.action_refresh)
-        self.toolbar.addSeparator()
-        self.toolbar.addAction(self.action_check)
-        self.toolbar.addAction(self.action_update)
-        self.toolbar.addAction(self.action_verify)
-        self.toolbar.addSeparator()
-        self.toolbar.addAction(self.action_stop)
 
         status_bar = QFrame()
         status_bar.setObjectName("StatusBar")
@@ -637,7 +556,7 @@ class MainWindow(QWidget):
         status_layout.addWidget(self.btn_theme)
 
         body_splitter = CollapsibleSplitter(Qt.Horizontal)
-        body_splitter.setHandleWidth(10)
+        body_splitter.setHandleWidth(6)
         body_splitter.sectionDoubleClicked.connect(
             self._body_section_double_clicked
         )
@@ -666,6 +585,15 @@ class MainWindow(QWidget):
 
         buttons = QHBoxLayout()
 
+        self.btn_refresh_servers = QToolButton()
+        self.btn_refresh_servers.setObjectName("btn_icon")
+        self.btn_refresh_servers.setIcon(icon("refresh", 16, "@icon_accent"))
+        self.btn_refresh_servers.setIconSize(QSize(16, 16))
+        self.btn_refresh_servers.setToolTip("Обновить список серверов")
+        self.btn_refresh_servers.clicked.connect(
+            self._refresh_servers
+        )
+
         self.btn_add_server = QToolButton()
         self.btn_add_server.setObjectName("btn_icon")
         self.btn_add_server.setIcon(icon("add", 16, "@icon_accent"))
@@ -691,6 +619,7 @@ class MainWindow(QWidget):
         self.btn_invert.setIconSize(QSize(16, 16))
         self.btn_invert.setToolTip("Инвертировать выделение")
 
+        buttons.addWidget(self.btn_refresh_servers)
         buttons.addWidget(self.btn_add_server)
         buttons.addWidget(self.btn_select_all)
         buttons.addWidget(self.btn_clear)
@@ -811,13 +740,10 @@ class MainWindow(QWidget):
         log_layout.addWidget(self.log)
 
         # ----------------------------------------------------------
-        # Queries Panel UI
+        # Scripts Library UI
         # ----------------------------------------------------------
 
-        self.queries_panel = QueriesPanel()
-        self.queries_panel.set_template(
-            sql_builder.scan_template
-        )
+        self.scripts_library = ScriptsLibrary()
 
         # ----------------------------------------------------------
         # SQL Console Panel UI
@@ -895,7 +821,7 @@ class MainWindow(QWidget):
         tabs = QTabWidget()
         tabs.addTab(table_frame, "Результаты")
         tabs.addTab(log_frame, "Журнал")
-        tabs.addTab(self.queries_panel, "Запросы")
+        tabs.addTab(self.scripts_library, "Скрипты")
 
         self.tabs_frame = QFrame()
         self.tabs_frame.setObjectName("TabsBlock")
@@ -1012,16 +938,12 @@ class MainWindow(QWidget):
             self._sql_scope_changed
         )
 
-        self.queries_panel.applyRequested.connect(
-            self._apply_query_template
+        self.scripts_library.runRequested.connect(
+            self._run_check_script
         )
 
-        self.queries_panel.rerunRequested.connect(
-            self._run_check
-        )
-
-        self.queries_panel.clearRequested.connect(
-            self.queries_panel.log.clear
+        self.scripts_library.clearLogRequested.connect(
+            self.scripts_library.log.clear
         )
 
         self.btn_search.clicked.connect(
@@ -1036,19 +958,7 @@ class MainWindow(QWidget):
             self._search_run
         )
 
-        # Панель инструментов размещена в splitter, чтобы её можно было
-        # сворачивать и раскрывать двойным кликом по ручке.
-        self.toolbar_splitter = CollapsibleSplitter(Qt.Vertical)
-        self.toolbar_splitter.setHandleWidth(8)
-        self.toolbar_splitter.addWidget(self.toolbar)
-        self.toolbar_splitter.addWidget(body_splitter)
-        self.toolbar_splitter.setStretchFactor(0, 0)
-        self.toolbar_splitter.setStretchFactor(1, 1)
-        # Toolbar скрыт по умолчанию, но его ручка остаётся доступной
-        # для раскрытия двойным кликом.
-        self.toolbar_splitter.setSizes([0, 900])
-
-        content.addWidget(self.toolbar_splitter, 1)
+        content.addWidget(body_splitter, 1)
 
         root.addWidget(content_widget, 1)
 
@@ -1155,20 +1065,15 @@ class MainWindow(QWidget):
         self.log.moveCursor(QTextCursor.End)
 
     # ----------------------------------------------------------
-    # Query Panel
+    # Scripts Library
     # ----------------------------------------------------------
 
     def _append_query(self, text):
-        self.queries_panel.append_query(text)
+        self.scripts_library.append_query(text)
 
-    def _apply_query_template(self, template: str):
-
+    def _run_check_script(self, template: str):
         sql_builder.set_custom_template(template)
-
-        self.append_log(
-            "SUCCESS",
-            "Query template applied.",
-        )
+        self._run_check()
 
     # ----------------------------------------------------------
     # SQL Console
@@ -1798,6 +1703,7 @@ class MainWindow(QWidget):
         self.setStyleSheet(theme_styles.build_stylesheet())
         set_icon_theme(theme_styles.theme_colors())
         self._refresh_icons()
+        self.scripts_library.retheme_icons()
         self.panel.retheme()
         self._sync_theme_ui()
 
@@ -1817,11 +1723,7 @@ class MainWindow(QWidget):
         )
 
     def _refresh_icons(self):
-        self.action_refresh.setIcon(icon("refresh", 20, "@icon_fg"))
-        self.action_check.setIcon(icon("play_arrow", 20, "@icon_fg"))
-        self.action_update.setIcon(icon("edit", 20, "@icon_fg"))
-        self.action_verify.setIcon(icon("check_circle", 20, "@icon_fg"))
-        self.action_stop.setIcon(icon("stop", 20, "@icon_fg"))
+        self.btn_refresh_servers.setIcon(icon("refresh", 16, "@icon_accent"))
         self.btn_add_server.setIcon(icon("add", 16, "@icon_accent"))
         self.btn_select_all.setIcon(icon("done_all"))
         self.btn_clear.setIcon(icon("close"))

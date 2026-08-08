@@ -316,6 +316,52 @@ QLabel#InlineLabel{
     background:transparent;
 }
 
+/* --- Scripts library --- */
+QFrame#ScriptsListCard{
+    background:{card};
+    border:1px solid {border};
+    border-radius:10px;
+    padding:6px;
+}
+
+QListWidget#ScriptsList{
+    background:{input_bg};
+    color:{text};
+    border:1px solid {border};
+    border-radius:6px;
+    padding:2px;
+    outline:0;
+}
+
+QListWidget#ScriptsList::item{
+    padding:4px 8px;
+    border-radius:4px;
+    margin:0;
+}
+
+QListWidget#ScriptsList::item:hover{
+    background:{hover_bg};
+}
+
+QListWidget#ScriptsList::item:selected{
+    background:{sel_bg};
+    color:{sel_text};
+}
+
+QLineEdit#SearchField{
+    background:{input_bg};
+    border:1px solid {border};
+    border-radius:6px;
+    padding:4px 8px;
+    color:{text};
+    selection-background-color:{accent};
+    selection-color:#ffffff;
+}
+
+QLineEdit#SearchField:focus{
+    border-color:{input_focus};
+}
+
 /* --- Status bar (full-bleed; тёмная в обеих темах) --- */
 QFrame#StatusBar{
     background:qlineargradient(x1:0,y1:0,x2:0,y2:1,
@@ -434,7 +480,6 @@ QComboBox QFrame{
     border-radius:0;
 }
 
-/* --- Toolbar --- */
 QToolBar{
     background:{card};
     border:1px solid {border};
@@ -724,7 +769,30 @@ QToolTip{
 
 /* --- Splitters --- */
 QSplitter::handle{
+    background:transparent;
+    border:none;
+}
+
+/* Вертикальная ручка (разделяет лево/право): тонкая линия по центру */
+QSplitter::handle:horizontal{
     background:{divider};
+    margin:0 2px 0 2px;
+    border-radius:1px;
+}
+
+QSplitter::handle:horizontal:hover{
+    background:{border_strong};
+}
+
+/* Горизонтальная ручка (разделяет верх/низ): тонкая линия сверху
+   (QSS margin для handle:vertical не применяется, используем border) */
+QSplitter::handle:vertical{
+    background:transparent;
+    border-top:1px solid {divider};
+}
+
+QSplitter::handle:vertical:hover{
+    border-top-color:{border_strong};
 }
 
 /* --- Scrollbars --- */
